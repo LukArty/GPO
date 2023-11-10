@@ -10,42 +10,67 @@
 // https://msdn.microsoft.com/en-us/library/ff802693.aspx
 // http://www.cplusplus.com/forum/unices/10491/
 
+
+#ifndef CESERIAL_H
+#define CESERIAL_H
 #include <string>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include <array>
+
+#if defined(_WIN64) || defined(__WIN32__) || defined(_WIN32) || defined(WIN32) || defined(__WINDOWS__) || defined(__TOS_WIN__) || defined(__CYGWIN__)
+#define CE_WINDOWS
+#elif defined(unix) || defined(__unix) || defined(__unix__)
+#define CE_LINUX
+#endif
+
+#ifdef CE_WINDOWS
+#include <windows.h>
+#endif
 
 namespace ce {
 
-struct UartResponse{
+
+
+class ceSerial {
+private:
+    uint16_t rxchar;
+    std::string port;
+    long baud;
+    long dsize;
+    char parity;
+    float stopbits;
+    bool stdbaud;
+
+#ifdef CE_WINDOWS
+    HANDLE hComm; //handle
+    OVERLAPPED osReader;
+    OVERLAPPED osWrite;
+    BOOL fWaitingOnRead;
+    COMMTIMEOUTS timeouts_ori;
+#else
+    long fd; //serial_fd
+#endif
+
+public:
+    struct UartResponse{
         uint8_t status_= 0;
         uint8_t nameCommand_ = 0;
         uint8_t crc_= 0;
         uint16_t parameters_ [10] = {0,0,0,0,0,0,0,0,0,0};
 
     };
-
-class ceSerial {
-    uint16_t rxchar_;
-    std::string port_;
-    long baud_;
-    long dsize_;
-    char parity_;
-    float stopbits_;
-    long fd_; //serial_fd
-
-
-public:
     static void Delay(unsigned long ms);
     ceSerial();
     ceSerial(std::string Device, long BaudRate, long DataSize, char ParityType, float NStopBits);
     ~ceSerial();
     long Open(void);//return 0 if success
     void Close();
-    char ReadChar();
     char ReadChar(bool& success);//return read char if success
-    ce::UartResponse Read_com(unsigned int timeout);
     bool WriteChar(char ch);    //return success flag
-    bool Write(uint16_t data);
     bool Write(uint8_t data);
+    bool Write(uint16_t data);
     bool Write(char * data);//write null terminated string and return success flag
     bool Write(char *data,long n);
     bool SetRTS(bool value);//return success flag
@@ -55,7 +80,7 @@ public:
     bool GetRI(bool& success);
     bool GetCD(bool& success);
     bool IsOpened();
-    void SetPort(std::string Port);
+    void SetPortName(std::string Port);
     std::string GetPort();
     void SetBaudRate(long baudrate);
     long GetBaudRate();
@@ -65,7 +90,9 @@ public:
     char GetParity();
     void SetStopBits(float nbits);
     float GetStopBits();
+
 };
 
 } // namespace ce
 
+#endif
