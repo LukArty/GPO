@@ -4,9 +4,7 @@
 /// @copyright Copyright 2022 InfoTeCS.
 
 #include <conserial.h>
-#include <string.h>
-#include <iostream>
-#include <fstream>
+
 
 #include <cstddef>
 #include <bitset>
@@ -16,7 +14,11 @@ namespace hwe
 
 Conserial::Conserial()
 {
-    com_.SetPort(std::string("/dev/ttyStandQKD"));
+    #ifdef CE_WINDOWS
+    com_.SetPortName(std::string("COM4"));
+    #else
+    com_.SetPortName(std::string("/dev/ttyStandQKD"));
+    #endif
     com_.SetBaudRate(115200);
     com_.SetDataSize(8);
     com_.SetParity('N');
@@ -24,6 +26,7 @@ Conserial::Conserial()
     com_.Open();
     com_.Close();
     com_.Open();
+
 }
 
 Conserial::~Conserial()
@@ -31,7 +34,7 @@ Conserial::~Conserial()
 
 api:: InitResponse Conserial:: Init()
 {
-     DebugLogger debug(__FUNCTION__);
+    DebugLogger debug(__FUNCTION__);
     api::InitResponse response; // Структура для формирования ответа
     std::fstream ini_("./Angles.ini");
     if (!ini_.is_open()) { response = InitByPD();  }
@@ -66,44 +69,21 @@ api:: InitResponse Conserial:: Init()
 
 api::InitResponse Conserial::InitByPD()
 {
-     DebugLogger debug(__FUNCTION__);
+    DebugLogger debug(__FUNCTION__);
     api::InitResponse response; // Структура для формирования ответа
     response.errorCode_ = 0;
     uint16_t tempTimeOut_ = 900;
-    uint16_t tempData = timeoutTime_;
-    timeoutTime_ = tempTimeOut_;
+    uint16_t tempData = standOptions.timeoutTime_;
+    standOptions.timeoutTime_ = tempTimeOut_;
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    ce::UartResponse pack;
-
-
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("Init")->second); // Посылаем запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-
-
+    UartResponse pack;
+    pack = Twiting(dict_.find("Init")->second, 0);
 
     // Заполняем поля структуры
-    response.startPlatesAngles_.aHalf_  = ((float) pack.parameters_[0]) * rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
-    response.startPlatesAngles_.aQuart_ = ((float) pack.parameters_[1]) * rotateStep_; // <- четвертьволновая пластина "Алисы" (2я пластинка)
-    response.startPlatesAngles_.bHalf_  = ((float) pack.parameters_[2]) * rotateStep_; // <- полуволновая пластина "Боба"      (3я пластинка)
-    response.startPlatesAngles_.bQuart_ = ((float) pack.parameters_[3]) * rotateStep_; // <- четвертьволновая пластина "Боба"  (4я пластинка)
+    response.startPlatesAngles_.aHalf_  = ((float) pack.parameters_[0]) * standOptions.rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
+    response.startPlatesAngles_.aQuart_ = ((float) pack.parameters_[1]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Алисы" (2я пластинка)
+    response.startPlatesAngles_.bHalf_  = ((float) pack.parameters_[2]) * standOptions.rotateStep_; // <- полуволновая пластина "Боба"      (3я пластинка)
+    response.startPlatesAngles_.bQuart_ = ((float) pack.parameters_[3]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Боба"  (4я пластинка)
 
     response.startLightNoises_.h_ = pack.parameters_[4]; // <- начальная засветка детектора, принимающего горизонтальную поляризацию
     response.startLightNoises_.v_ = pack.parameters_[5]; //<- начальная засветка детектора, принимающего вертикальную поляризацию
@@ -112,50 +92,31 @@ api::InitResponse Conserial::InitByPD()
     response.maxSignalLevels_.v_ = pack.parameters_[7]; // <- максимальный уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
 
     response.maxLaserPower_ = pack.parameters_[9];
+    response.errorCode_ = pack.status_;
 
-    curAngles_ = response.startPlatesAngles_; // Сохраняем текущее значение углов на будущее
-    timeoutTime_ = tempData;
+    standOptions.startPlatesAngles_ = response.startPlatesAngles_; // Сохраняем текущее значение углов на будущее
+    standOptions.startLightNoises_ = response.startLightNoises_;
+    standOptions.maxSignalLevels_ = response.maxSignalLevels_;
+    standOptions.maxLaserPower_ = response.maxLaserPower_;
+    standOptions.timeoutTime_ = tempData;
     return debug.Return(response); // Возвращаем сформированный ответ
 }
 
 api::InitResponse Conserial::InitByButtons(WAngles<angle_t> angles)
 {
-     DebugLogger debug(__FUNCTION__, 4, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_);
+    DebugLogger debug(__FUNCTION__, 4, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_);
     api::InitResponse response; // Структура для формирования ответа
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
+    WAngles<adc_t> steps = CalcSteps(angles);
 
-    int steps1_ = round(fmod(angles.aHalf_,360)/rotateStep_);
-    int steps2_ = round(fmod(angles.aQuart_,360)/rotateStep_);
-    int steps3_ = round(fmod(angles.bHalf_,360)/rotateStep_);
-    int steps4_ = round(fmod(angles.bQuart_,360)/rotateStep_);
-
-    ce::UartResponse pack;
-
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("InitByButtons")->second, steps1_, steps2_, steps3_, steps4_); // Посылаем запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    UartResponse pack;
+    pack = Twiting(dict_.find("InitByButtons")->second, 4, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
 
     // Заполняем поля структуры
-    response.startPlatesAngles_.aHalf_  = ((float) pack.parameters_[0]) * rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
-    response.startPlatesAngles_.aQuart_ = ((float) pack.parameters_[1]) * rotateStep_; // <- четвертьволновая пластина "Алисы" (2я пластинка)
-    response.startPlatesAngles_.bHalf_  = ((float) pack.parameters_[2]) * rotateStep_; // <- полуволновая пластина "Боба"      (3я пластинка)
-    response.startPlatesAngles_.bQuart_ = ((float) pack.parameters_[3]) * rotateStep_; // <- четвертьволновая пластина "Боба"  (4я пластинка)
+    response.startPlatesAngles_.aHalf_  = ((float) pack.parameters_[0]) * standOptions.rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
+    response.startPlatesAngles_.aQuart_ = ((float) pack.parameters_[1]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Алисы" (2я пластинка)
+    response.startPlatesAngles_.bHalf_  = ((float) pack.parameters_[2]) * standOptions.rotateStep_; // <- полуволновая пластина "Боба"      (3я пластинка)
+    response.startPlatesAngles_.bQuart_ = ((float) pack.parameters_[3]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Боба"  (4я пластинка)
 
     response.startLightNoises_.h_ = pack.parameters_[4]; // <- начальная засветка детектора, принимающего горизонтальную поляризацию
     response.startLightNoises_.v_ = pack.parameters_[5]; //<- начальная засветка детектора, принимающего вертикальную поляризацию
@@ -164,85 +125,44 @@ api::InitResponse Conserial::InitByButtons(WAngles<angle_t> angles)
     response.maxSignalLevels_.v_ = pack.parameters_[7]; // <- максимальный уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
 
     response.maxLaserPower_ = pack.parameters_[8];
-    maxLaserPower_ = response.maxLaserPower_;
+    response.errorCode_ = pack.status_;
 
-
-    curAngles_ = response.startPlatesAngles_; // Сохраняем текущее значение углов на будущее
+    standOptions.startPlatesAngles_ = response.startPlatesAngles_; // Сохраняем текущее значение углов на будущее
+    standOptions.startLightNoises_ = response.startLightNoises_;
+    standOptions.maxSignalLevels_ = response.maxSignalLevels_;
+    standOptions.maxLaserPower_ = response.maxLaserPower_;
     return debug.Return(response); // Возвращаем сформированный ответ
 }
 
 api::AdcResponse Conserial::RunTest(adc_t testId)
 {
-     DebugLogger debug(__FUNCTION__, 1, testId);
+    DebugLogger debug(__FUNCTION__, 1, testId);
     api::AdcResponse response; // Структура для формирования ответа
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-    //Заглушка до доработки прошивки на МК
-    /*
-    // После установки соединения...
-    SendUart(dict_.find("RunSelfTest")->second, testId); // Запрос МК
-    // Чтение ответа
-    ce::UartResponse pack;
-    ReadUart(&pack);
-    response.adcResponse_ = pack.param1; // Возвращаем целое число
-    response.errorCode_ = 0; // Команда отработала корректно
-    */
-    response = {0,0};
+    UartResponse pack;
+    pack = Twiting(dict_.find("RunSelfTest")->second, 1, testId);
+
+    response.adcResponse_ = pack.parameters_[0]; // Возвращаем целое число
+    response.errorCode_ = pack.status_; // Команда отработала корректно
+
     return debug.Return(response);
 }
 
 api::SendMessageResponse Conserial::Sendmessage(WAngles<angle_t> angles, adc_t power)
 {
-     DebugLogger debug(__FUNCTION__, 5, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_, power);
+    DebugLogger debug(__FUNCTION__, 5, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_, power);
     api::SendMessageResponse response; // Структура для формирования ответа
 
+    WAngles<adc_t> steps = CalcSteps(angles);
 
-    adc_t steps1 = CalcSteps(angles.aHalf_,rotateStep_);
-    adc_t steps2 = CalcSteps(angles.aQuart_,rotateStep_);
-    adc_t steps3 = CalcSteps(angles.bHalf_,rotateStep_);
-    adc_t steps4 = CalcSteps(angles.bQuart_,rotateStep_);
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    ce::UartResponse pack;
-
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("SendMessage")->second,  steps1, steps2, steps3, steps4, power);
-        ReadUart(&pack);
-        if (pack.status_==1 &&
-            pack.parameters_[0] == steps1 &&
-            pack.parameters_[1] == steps2 &&
-            pack.parameters_[2] == steps3 &&
-            pack.parameters_[3] == steps4){break;}
-
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    UartResponse pack;
+    pack = Twiting(dict_.find("SendMessage")->second, 5, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_, power);
 
     // Заполняем поля
-    response.newPlatesAngles_.aHalf_  = ((float)pack.parameters_[0]) * rotateStep_; // <- полуволновая пластина "Алисы"     (1я пластинка)
-    response.newPlatesAngles_.aQuart_ = ((float)pack.parameters_[1]) * rotateStep_; // <- четвертьволновая пластина "Алисы" (2я пластинка)
-    response.newPlatesAngles_.bHalf_  = ((float)pack.parameters_[2]) * rotateStep_; // <- полуволновая пластина "Боба"      (3я пластинка)
-    response.newPlatesAngles_.bQuart_ = ((float)pack.parameters_[3]) * rotateStep_; // <- четвертьволновая пластина "Боба"  (4я пластинка)
+    response.newPlatesAngles_.aHalf_  = ((float)pack.parameters_[0]) * standOptions.rotateStep_; // <- полуволновая пластина "Алисы"     (1я пластинка)
+    response.newPlatesAngles_.aQuart_ = ((float)pack.parameters_[1]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Алисы" (2я пластинка)
+    response.newPlatesAngles_.bHalf_  = ((float)pack.parameters_[2]) * standOptions.rotateStep_; // <- полуволновая пластина "Боба"      (3я пластинка)
+    response.newPlatesAngles_.bQuart_ = ((float)pack.parameters_[3]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Боба"  (4я пластинка)
 
     response.currentLightNoises_.h_ = pack.parameters_[4]; // <- засветка детектора, принимающего горизонтальную поляризацию
     response.currentLightNoises_.v_ = pack.parameters_[5]; // <- засветка детектора, принимающего вертикальную поляризацию
@@ -250,127 +170,319 @@ api::SendMessageResponse Conserial::Sendmessage(WAngles<angle_t> angles, adc_t p
     response.currentSignalLevels_.h_ = pack.parameters_[6]; // <- уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
     response.currentSignalLevels_.v_ = pack.parameters_[7]; // <- уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
 
+    response.errorCode_ = pack.status_;
 
-    curAngles_ = response.newPlatesAngles_; // Запомнили текущие значения углов
+    standOptions.curAngles_ = response.newPlatesAngles_; // Запомнили текущие значения углов
+    standOptions.lightNoises = response.currentLightNoises_;
+    standOptions.signalLevels_ = response.currentSignalLevels_;
 
     return debug.Return(response);
 }
 
 api::AdcResponse Conserial::SetTimeout(adc_t timeout)
 {
-     DebugLogger debug(__FUNCTION__, 1, timeout);
+    DebugLogger debug(__FUNCTION__, 1, timeout);
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
-    if (timeout <= 0){ return {0,2};}
-    else if (timeout >= 900){timeout = 900;}
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
+    if (timeout <= 0){
+        response.errorCode_ = 2; // Принят некорректный входной параметр
         return debug.Return(response);
     }
+    else if (timeout >= 900){timeout = 900;}
 
-    ce::UartResponse pack;
-
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("SetTimeout")->second, timeout);
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    UartResponse pack;
+    pack = Twiting(dict_.find("SetLaserState")->second,  1, timeout);
 
     response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
 
-    timeoutTime_ = response.adcResponse_ ;
+    standOptions.timeoutTime_ = response.adcResponse_ ;
 
     return debug.Return(response);
 }
 
 api::AdcResponse Conserial::SetLaserState(adc_t on)
 {
-     DebugLogger debug(__FUNCTION__, 1, on);
+    DebugLogger debug(__FUNCTION__, 1, on);
     api::AdcResponse response; // Структура для формирования ответа
 
     if(on != 1 && on != 0)
     {
-        cout<<"Введено некорректное значение параметра";
         response.errorCode_ = 2; // Принят некорректный входной параметр
         return debug.Return(response);
     }
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("SetLaserState")->second, on); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    UartResponse pack;
+    pack = Twiting(dict_.find("SetLaserState")->second,  1, on);
 
     response.adcResponse_ = pack.parameters_[0];
-
+    response.errorCode_ = pack.status_;
+    standOptions.laserState_ = response.adcResponse_;
     return debug.Return(response); // Возвращаем значение, соответствующее установленному состоянию
 }
 
 api::AdcResponse Conserial::SetLaserPower(adc_t power)
 {
-     DebugLogger debug(__FUNCTION__, 1, power);
+    DebugLogger debug(__FUNCTION__, 1, power);
     api::AdcResponse response; // Структура для формирования ответа
 
-    if (power > maxLaserPower_)
+    UartResponse pack;
+    if (power > standOptions.maxLaserPower_)
     {
         response.errorCode_ = 2; // Принят некорректный входной параметр
         return debug.Return(response);
     }
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("SetLaserPower")->second, power); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    pack = Twiting(dict_.find("SetLaserPower")->second,  1, power);
 
     response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
 
+    standOptions.laserPower_= response.adcResponse_;
     return debug.Return(response); // Возвращаем значение, соответствующее установленному уровню
 }
 
+api::WAnglesResponse Conserial::SetPlatesAngles(WAngles<angle_t> angles)
+{
+    DebugLogger debug(__FUNCTION__, 4, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_);
+    api::WAnglesResponse response; // Структура для формирования ответа
+
+    WAngles<adc_t> steps = CalcSteps(angles);
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("SetPlatesAngles")->second,  4, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+
+    steps = {pack.parameters_[0],pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
+
+    // Записываем полученное в структуру
+    response.angles_ =  CalcAngles(steps);
+    response.errorCode_ = pack.status_;
+
+    standOptions.curAngles_ = response.angles_;
+    return debug.Return(response); // Возвращаем, чего там получилось установить
+}
+
+api::WAnglesResponse Conserial::UpdateBaseAngle(WAngles<angle_t> angles)
+{
+    DebugLogger debug(__FUNCTION__, 4, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_);
+
+    api::WAnglesResponse response; // Структура для формирования ответа
+
+    WAngles<adc_t> steps = CalcSteps(angles);
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("UpdateBaseAngles")->second,  4, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+
+    steps = {pack.parameters_[0],pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
+
+    // Записываем полученное в структуру
+    response.angles_ =  CalcAngles(steps);
+    response.errorCode_ = pack.status_;
+
+    return debug.Return(response); // Возвращаем, чего там получилось установить
+}
+
+api::WAnglesResponse Conserial::ReadBaseAngles()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::WAnglesResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("ReadBaseAngles")->second, 0);
+
+    WAngles<adc_t> steps = {pack.parameters_[0], pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
+
+    // Записываем полученное в структуру
+    response.angles_ =  CalcAngles(steps);
+    response.errorCode_ = pack.status_;
+
+    return debug.Return(response);
+}
+
+api::AdcResponse Conserial::ReadEEPROM(uint8_t numberUnit_)
+{
+    DebugLogger debug(__FUNCTION__, 1, numberUnit_);
+    api::AdcResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("ReadEEPROM")->second, 1, numberUnit_);
+
+    // Заполняем поля для ответа
+    response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
+
+    return debug.Return(response); // Возвращаем полученное состояние
+}
+
+api::AdcResponse Conserial::WriteEEPROM(uint8_t numberUnit_, uint16_t param_)
+{
+    DebugLogger debug(__FUNCTION__, 2, numberUnit_, param_);
+    api::AdcResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("WriteEEPROM")->second, 2, numberUnit_, param_);
+
+    // Заполняем поля для ответа
+    response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
+
+    return debug.Return(response); // Возвращаем полученное состояние
+}
+
+api::AdcResponse Conserial::GetLaserState()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::AdcResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetLaserState")->second, 0);
+
+    // Заполняем поля для ответа
+    response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
+
+    standOptions.laserState_ = response.adcResponse_;
+    return debug.Return(response); // Возвращаем полученное состояние
+}
+
+api::AdcResponse Conserial::GetLaserPower()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::AdcResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetLaserPower")->second, 0);
+
+    // Заполняем поля для ответа
+    response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
+
+    standOptions.laserPower_= response.adcResponse_;
+    return debug.Return(response); // Возвращаем полученное состояние
+}
+
+api::WAnglesResponse Conserial::GetPlatesAngles()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::WAnglesResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetCurPlatesAngles")->second, 0);
+
+    // Получаем текущие углы поворота волновых пластин от МК
+    WAngles<adc_t> steps = {pack.parameters_[0],pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
+
+    // Записываем полученное в структуру
+    response.angles_ =  CalcAngles(steps);
+    response.errorCode_ = pack.status_;
+
+    standOptions.curAngles_ = response.angles_;
+    return debug.Return(response);
+}
+
+api::SLevelsResponse Conserial::GetSignalLevels()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::SLevelsResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetSignalLevel")->second, 0);
+
+    // Заполняем структуру для ответа
+    response.signal_.h_ = pack.parameters_[0]; // <- уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
+    response.signal_.v_ = pack.parameters_[1]; // <- уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазер
+    response.errorCode_ = pack.status_;
+
+    standOptions.signalLevels_ = response.signal_;
+    return debug.Return(response);
+}
+
+api::AngleResponse Conserial::GetRotateStep()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::AngleResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetRotateStep")->second, 0);
+
+    // Получаем от МК количество шагов для поворота на 360 градусов
+    uint16_t steps_ = pack.parameters_[0];
+    if(steps_!=0){  standOptions.rotateStep_ = 360.0 / steps_;} // Считаем сколько градусов в одном шаге
+
+    response.angle_= standOptions.rotateStep_;
+    response.errorCode_ = pack.status_;
+
+    return debug.Return(response);
+}
+
+api::SLevelsResponse Conserial::GetLightNoises()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::SLevelsResponse response; // Структура для формирования ответа
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetLightNoises")->second, 0);
+
+    // Заполняем структуру для ответа
+    response.signal_.h_ = pack.parameters_[0]; // <- уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
+    response.signal_.v_ = pack.parameters_[1]; // <- уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
+    response.errorCode_ = pack.status_;
+
+    standOptions.lightNoises = response.signal_;
+    return debug.Return(response);
+}
+
+api::AdcResponse Conserial::GetErrorCode()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetErrorCode")->second, 0);
+
+    response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
+
+    return debug.Return(response);
+}
+
+api::AdcResponse Conserial::GetTimeout()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetTimeout")->second, 0);
+
+
+    response.adcResponse_ = pack.parameters_[0];
+    response.errorCode_ = pack.status_;
+
+    standOptions.timeoutTime_  = response.adcResponse_;
+
+    return debug.Return(response);
+}
+
+api::SLevelsResponse Conserial::GetStartLightNoises()
+{
+    DebugLogger debug(__FUNCTION__);
+    api::SLevelsResponse response; // Структура для формирования ответа
+
+
+    // получаем от МК начальные уровни засветки
+
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetMaxLaserPower")->second, 0);
+
+    response.errorCode_ = pack.status_;
+    // Заполняем структуру
+    response.signal_.h_ = pack.parameters_[0]; // <- начальная засветка детектора, принимающего горизонтальную поляризацию
+    response.signal_.v_ = pack.parameters_[1]; // <- начальная засветка детектора, принимающего вертикальную поляризацию
+
+    return debug.Return(response);
+}
 api::AngleResponse Conserial::SetPlateAngle(adc_t plateNumber, angle_t angle)
 {
-     DebugLogger debug(__FUNCTION__, 2, plateNumber, angle);
+    DebugLogger debug(__FUNCTION__, 2, plateNumber, angle);
     api::AngleResponse response; // Структура для формирования ответа
 
     if(plateNumber < 1 || plateNumber > 4)
@@ -382,956 +494,411 @@ api::AngleResponse Conserial::SetPlateAngle(adc_t plateNumber, angle_t angle)
 
     // Рассчитываем шаги...
 
-    adc_t Steps;
-    Steps = CalcSteps(angle,rotateStep_); //Подсчёт и округление шагов
+    adc_t Step;
+    Step = CalcStep(angle, standOptions.rotateStep_); //Подсчёт и округление шагов
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
+    UartResponse pack;
+    pack = Twiting(dict_.find("SetPlateAngle")->second, 2, Step, plateNumber);
 
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
 
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("SetPlateAngle")->second, Steps, plateNumber); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
 
     // Заполняем поля
-    response.angle_ = ((float)pack.parameters_[0]) * rotateStep_;
-
+    response.angle_ = ((float)pack.parameters_[0]) * standOptions.rotateStep_;
+    response.errorCode_ = pack.status_;
     // Запоминаем новый угол на будущее
     switch (plateNumber)
     {
-    case 1: curAngles_.aHalf_ = response.angle_; break;
-    case 2: curAngles_.aQuart_= response.angle_; break;
-    case 3: curAngles_.bHalf_ = response.angle_; break;
-    case 4: curAngles_.bQuart_= response.angle_; break;
+    case 1: standOptions.curAngles_.aHalf_ = response.angle_; break;
+    case 2: standOptions.curAngles_.aQuart_= response.angle_; break;
+    case 3: standOptions.curAngles_.bHalf_ = response.angle_; break;
+    case 4: standOptions.curAngles_.bQuart_= response.angle_; break;
     }
 
     return debug.Return(response); // Возвращаем, чего там получилось установить
 }
-
-api::WAnglesResponse Conserial::SetPlatesAngles(WAngles<angle_t> angles)
-{
-     DebugLogger debug(__FUNCTION__, 4, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_);
-    api::WAnglesResponse response; // Структура для формирования ответа
-
-    adc_t steps1_ = CalcSteps(angles.aHalf_,rotateStep_);
-    adc_t steps2_ = CalcSteps(angles.aQuart_,rotateStep_);
-    adc_t steps3_ = CalcSteps(angles.bHalf_,rotateStep_);
-    adc_t steps4_ = CalcSteps(angles.bQuart_,rotateStep_);
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("SetPlatesAngles")->second, steps1_, steps2_, steps3_, steps4_); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-
-    // Заполняем поля
-    response.angles_.aHalf_ = ((float)pack.parameters_[0]) * rotateStep_;
-    response.angles_.aQuart_ = ((float)pack.parameters_[1]) * rotateStep_;
-    response.angles_.bHalf_ = ((float)pack.parameters_[2]) * rotateStep_;
-    response.angles_.bQuart_ = ((float)pack.parameters_[3]) * rotateStep_;
-
-    return debug.Return(response); // Возвращаем, чего там получилось установить
-}
-
-api::WAnglesResponse Conserial::UpdateBaseAngle(WAngles<angle_t> angles)
-{
-     DebugLogger debug(__FUNCTION__, 4, angles.aHalf_, angles.aQuart_, angles.bHalf_, angles.bQuart_);
-
-    api::WAnglesResponse response; // Структура для формирования ответа
-
-    adc_t steps1_ = CalcSteps(angles.aHalf_,rotateStep_);
-    adc_t steps2_ = CalcSteps(angles.aQuart_,rotateStep_);
-    adc_t steps3_ = CalcSteps(angles.bHalf_,rotateStep_);
-    adc_t steps4_ = CalcSteps(angles.bQuart_,rotateStep_);
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("UpdateBaseAngle")->second, steps1_, steps2_, steps3_, steps4_); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Заполняем поля
-    response.angles_.aHalf_ = ((float)pack.parameters_[0]) * rotateStep_;
-    response.angles_.aQuart_ = ((float)pack.parameters_[1]) * rotateStep_;
-    response.angles_.bHalf_ = ((float)pack.parameters_[2]) * rotateStep_;
-    response.angles_.bQuart_ = ((float)pack.parameters_[3]) * rotateStep_;
-
-    return debug.Return(response); // Возвращаем, чего там получилось установить
-}
-
-api::WAnglesResponse Conserial::ReadBaseAngles()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::WAnglesResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("ReadBaseAngles")->second); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-
-    // Записываем полученное в структуру
-    response.angles_.aHalf_  = ((float)pack.parameters_[0]) * rotateStep_;//<- полуволновая пластина "Алисы"     (1я пластинка)
-    response.angles_.aQuart_ = ((float)pack.parameters_[1]) * rotateStep_; //<- четвертьволновая пластина "Алисы" (2я пластинка)
-    response.angles_.bHalf_  = ((float)pack.parameters_[2]) * rotateStep_; //<- полуволновая пластина "Боба"      (3я пластинка)
-    response.angles_.bQuart_ = ((float)pack.parameters_[3]) * rotateStep_; //<- четвертьволновая пластина "Боба"  (4я пластинка)
-
-    return debug.Return(response);
-}
-
-api::AdcResponse Conserial::ReadEEPROM(uint8_t numberUnit_)
-{
-     DebugLogger debug(__FUNCTION__, 1, numberUnit_);
-    api::AdcResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("ReadEEPROM")->second, numberUnit_); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Заполняем поля для ответа
-    response.adcResponse_ = pack.parameters_[0];
-
-    return debug.Return(response); // Возвращаем полученное состояние
-}
-
-api::AdcResponse Conserial::WriteEEPROM(uint8_t numberUnit_, uint16_t param_)
-{
-     DebugLogger debug(__FUNCTION__, 2, numberUnit_, param_);
-    api::AdcResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("WriteEEPROM")->second, numberUnit_, param_); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-    // Заполняем поля для ответа
-    response.adcResponse_ = pack.parameters_[0];
-
-    return debug.Return(response); // Возвращаем полученное состояние
-}
-
-api::AdcResponse Conserial::GetLaserState()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::AdcResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetLaserState")->second); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Заполняем поля для ответа
-    response.adcResponse_ = pack.parameters_[0];
-
-    return debug.Return(response); // Возвращаем полученное состояние
-}
-
-api::AdcResponse Conserial::GetLaserPower()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::AdcResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetLaserPower")->second);  // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Заполняем поля для ответа
-    response.adcResponse_ = pack.parameters_[0];
-
-    return debug.Return(response); // Возвращаем полученное состояние
-}
-
 api::AdcResponse Conserial::GetMaxLaserPower()
 {
-     DebugLogger debug(__FUNCTION__);
+    DebugLogger debug(__FUNCTION__);
     api::AdcResponse response; // Структура для формирования ответа
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
 
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetMaxLaserPower")->second);  // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetMaxLaserPower")->second, 0);
+
 
     // Заполняем поля для ответа
     response.adcResponse_ = pack.parameters_[0];
-
+    response.errorCode_ = pack.status_;
     return debug.Return(response); // Возвращаем полученное состояние
 }
 
 api::WAnglesResponse Conserial::GetStartPlatesAngles()
 {
-     DebugLogger debug(__FUNCTION__);
+    DebugLogger debug(__FUNCTION__);
     api::WAnglesResponse response; // Структура для формирования ответа
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Получаем начальные углы поворота волновых пластин от МК
-
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetStartPlatesAngles")->second);  // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetMaxLaserPower")->second, 0);
 
     // Записываем полученное в структуру
-    response.angles_.aHalf_  = ((float)pack.parameters_[0]) * rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
-    response.angles_.aQuart_ = ((float)pack.parameters_[1]) * rotateStep_; //<- четвертьволновая пластина "Алисы" (2я пластинка)
-    response.angles_.bHalf_  = ((float)pack.parameters_[2]) * rotateStep_; //<- полуволновая пластина "Боба"      (3я пластинка)
-    response.angles_.bQuart_ = ((float)pack.parameters_[3]) * rotateStep_; //<- четвертьволновая пластина "Боба"  (4я пластинка)
+    WAngles<adc_t> steps = {pack.parameters_[0], pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
 
+    // Записываем полученное в структуру
+    response.angles_ =  CalcAngles(steps);
+    response.errorCode_ = pack.status_;
     // возвращаем структуру
-    return debug.Return(response);
-}
-
-api::WAnglesResponse Conserial::GetPlatesAngles()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::WAnglesResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Получаем текущие углы поворота волновых пластин от МК
-
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetCurPlatesAngles")->second);     // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Записываем полученное в структуру
-    response.angles_.aHalf_  = ((float)pack.parameters_[0]) * rotateStep_;//<- полуволновая пластина "Алисы"     (1я пластинка)
-    response.angles_.aQuart_ = ((float)pack.parameters_[1]) * rotateStep_; //<- четвертьволновая пластина "Алисы" (2я пластинка)
-    response.angles_.bHalf_  = ((float)pack.parameters_[2]) * rotateStep_; //<- полуволновая пластина "Боба"      (3я пластинка)
-    response.angles_.bQuart_ = ((float)pack.parameters_[3]) * rotateStep_; //<- четвертьволновая пластина "Боба"  (4я пластинка)
-
-    return debug.Return(response);
-}
-
-api::SLevelsResponse Conserial::GetStartLightNoises()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::SLevelsResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-    // получаем от МК начальные уровни засветки
-
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetStartLightNoises")->second);    // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Заполняем структуру
-    response.signal_.h_ = pack.parameters_[0]; // <- начальная засветка детектора, принимающего горизонтальную поляризацию
-    response.signal_.v_ = pack.parameters_[1]; // <- начальная засветка детектора, принимающего вертикальную поляризацию
-
-    return debug.Return(response);
-}
-
-api::SLevelsResponse Conserial::GetSignalLevels()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::SLevelsResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetSignalLevel")->second);    // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Заполняем структуру для ответа
-    response.signal_.h_ = pack.parameters_[0]; // <- уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
-    response.signal_.v_ = pack.parameters_[1]; // <- уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
-
-    return debug.Return(response);
-}
-
-api::AngleResponse Conserial::GetRotateStep()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::AngleResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetRotateStep")->second);    // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Получаем от МК количество шагов для поворота на 360 градусов
-    uint16_t steps_ = pack.parameters_[0];
-    if(steps_!=0){  rotateStep_ = 360.0 / steps_;} // Считаем сколько градусов в одном шаге
-    response.angle_= rotateStep_;
-
-    return debug.Return(response);
-}
-
-api::SLevelsResponse Conserial::GetLightNoises()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::SLevelsResponse response; // Структура для формирования ответа
-
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
-    // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetRotateStep")->second);    // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    // Заполняем структуру для ответа
-    response.signal_.h_ = pack.parameters_[0]; // <- уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
-    response.signal_.v_ = pack.parameters_[1]; // <- уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
-
     return debug.Return(response);
 }
 
 api::SLevelsResponse Conserial::GetMaxSignalLevels()
 {
-     DebugLogger debug(__FUNCTION__);
+    DebugLogger debug(__FUNCTION__);
     api::SLevelsResponse response; // Структура для формирования ответа
 
-    // Открываем соединение с МК
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-
     // Чтение ответа
-    ce::UartResponse pack;
-    int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetMaxSignalLevel")->second); // Запрос МК
-        ReadUart(&pack);
-        if (pack.status_==1){break;}
-        ++count;
-    }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
+    UartResponse pack;
+    pack = Twiting(dict_.find("GetMaxSignalLevel")->second, 0);
 
     response.signal_.h_ = pack.parameters_[0]; // <- максимальный уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
     response.signal_.v_ = pack.parameters_[1]; // <- максимальный уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
 
     return debug.Return(response);
 }
+//api::InitResponse Conserial::GetInitParams(){
 
-api::AdcResponse Conserial::GetErrorCode()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
-    if(!com_.IsOpened())
+//    DebugLogger debug(__FUNCTION__);
+//    api::InitResponse response; // Структура для формирования ответа
+//    response.errorCode_ = 0;
+
+
+//    UartResponse pack;
+//    pack = Twiting(dict_.find("GetInitParams")->second, 0);
+
+
+//    // Заполняем поля структуры
+//    response.startPlatesAngles_.aHalf_  = ((float) pack.parameters_[0]) * standOptions.rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
+//    response.startPlatesAngles_.aQuart_ = ((float) pack.parameters_[1]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Алисы" (2я пластинка)
+//    response.startPlatesAngles_.bHalf_  = ((float) pack.parameters_[2]) * standOptions.rotateStep_; // <- полуволновая пластина "Боба"      (3я пластинка)
+//    response.startPlatesAngles_.bQuart_ = ((float) pack.parameters_[3]) * standOptions.rotateStep_; // <- четвертьволновая пластина "Боба"  (4я пластинка)
+
+//    response.startLightNoises_.h_ = pack.parameters_[4]; // <- начальная засветка детектора, принимающего горизонтальную поляризацию
+//    response.startLightNoises_.v_ = pack.parameters_[5]; //<- начальная засветка детектора, принимающего вертикальную поляризацию
+
+//    response.maxSignalLevels_.h_ = pack.parameters_[6]; // <- максимальный уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
+//    response.maxSignalLevels_.v_ = pack.parameters_[7]; // <- максимальный уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
+
+//    response.maxLaserPower_ = pack.parameters_[9];
+//    response.errorCode_ = pack.status_;
+
+//    standOptions.startPlatesAngles_ = response.startPlatesAngles_; // Сохраняем текущее значение углов на будущее
+//    standOptions.startLightNoises_ = response.startLightNoises_;
+//    standOptions.maxSignalLevels_ = response.maxSignalLevels_;
+//    standOptions.maxLaserPower_ = response.maxLaserPower_;
+
+//    return debug.Return(response); // Возвращаем сформированный ответ
+
+//};
+
+Conserial::UartResponse Conserial::Twiting (char commandName, int N,... ){
+    DebugLogger debug(__FUNCTION__);
+    UartResponse pack;
+    // Проверка соединения
+    if (!StandIsConected())
     {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
-    }
-    /*
-    // После установки соединения
-    SendUart(dict_.find("GetErrorCode")->second);
-    ce::UartResponse pack;
-    ReadUart(&pack);
-    response.adcResponse_ = pack.param1;
-    response.errorCode_ = 0; // Команда отработала корректно
-*/
-    response = {0,0};
-    return debug.Return(response);
-}
-
-api::AdcResponse Conserial::GetTimeout()
-{
-     DebugLogger debug(__FUNCTION__);
-    api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            cout<<"Проверьте соединение со стендом"<<endl;
-        response.errorCode_ = 1; // Не удалось установить соединение
-        return debug.Return(response);
+        pack.status_= 17;
+        return pack;
     }
 
-    ce::UartResponse pack;
+    va_list temp_params;
+    va_start(temp_params,N);
+    uint16_t *params =new uint16_t [N];
+    for (int i =0; i<N; i++){
+        params[i]= va_arg(temp_params, unsigned int);
+    }
+    va_end(temp_params);
+
     int count = 0;
-    while (count<=9) {
-        SendUart(dict_.find("GetTimeout")->second);         // Запрос МК
-        ReadUart(&pack);
+    while (count<3) {
+        //SendUart      //Посылаем запрос МК
+        switch (N) {
+        case 0:
+            SendUart(commandName, N );
+            break;
+        case 1:
+            SendUart(commandName, N , params[0]);
+            break;
+        case 2:
+            SendUart(commandName, N , params[0], params[1]);
+            break;
+        case 3:
+            SendUart(commandName, N , params[0], params[1], params[2]);
+            break;
+        case 4:
+            SendUart(commandName, N , params[0], params[1], params[2], params[3]);
+            break;
+        case 5:
+            SendUart(commandName, N , params[0], params[1], params[2], params[3], params[4]);
+            break;
+        }
+
+        //Чтение ответа
+        pack = ParsePackege(standOptions.timeoutTime_);
         if (pack.status_==1){break;}
         ++count;
     }
-    if (pack.status_ != 1){ response.errorCode_ = pack.status_;
-    }
-    else {response.errorCode_ = 0; /* Команда отработала корректно*/ }
-
-    response.adcResponse_ = pack.parameters_[0];
-    timeoutTime_  = response.adcResponse_;
-    return debug.Return(response);
+    pack.status_= CheckStatus(pack.status_);
+    delete [] params;
+    return pack;
 }
 
 //Функция передачи по uart
-uint16_t Conserial:: SendUart (char commandName){
-     DebugLogger debug(__FUNCTION__, 1, commandName);
+uint16_t Conserial:: SendUart (char commandName,int N,...){
+    DebugLogger debug(__FUNCTION__);
     uint8_t start1 = 255;
     uint8_t start2 = 254;
-    uint8_t status = 0;
-    uint16_t end = 65535;
+    uint8_t end1 = 255;
+    uint8_t end2 = 255;
+
+    uint8_t solt = 0;
     uint8_t crc;
 
-    uint16_t tempData_=0;
-    tempData_ = (uint8_t) commandName;
-    crc = Crc8((uint8_t *)&tempData_, sizeof(tempData_));
-    com_.Write(start1);
-    com_.Write(start2);
-    com_.Write(status);
-    com_.Write((uint8_t)commandName);
-    com_.Write(crc);
-    com_.Write(end);
-    debug.Return();
-    return 1;
-}
-uint16_t Conserial:: SendUart (char commandName, uint16_t Parameter1 ){
-     DebugLogger debug(__FUNCTION__, 2, commandName, Parameter1);
-    uint8_t start1 = 255;
-    uint8_t start2 = 254;
-    uint8_t status = 0;
-    uint16_t end = 65535;
-    uint8_t null = 0;
-    uint8_t crc;
-    uint16_t tempData_=0;
-    tempData_ = (uint8_t) commandName + Parameter1;
-    crc = Crc8((uint8_t *)&tempData_, sizeof(tempData_));
+    uint16_t temp_Data =  (uint16_t) commandName;
+    va_list temp_params;
+    va_start(temp_params,N);
+    uint16_t *params =new uint16_t [N];
+    for (int i =0; i<N; i++){
+        params[i]= va_arg(temp_params, unsigned int);
+        temp_Data+=params[i];
+    }
+    va_end(temp_params);
+    uint8_t temp_[64] = {(uint8_t) commandName,};
+    int j = 0;
+    for (int i = 1; i <= 2 * N; i= i+2){
+        temp_[i] = params[j]>>8;
+        temp_[i+1] = params[j];
+        j++;
+    };
+
+
+
+    crc = Crc8((uint8_t*)&temp_Data,sizeof(temp_Data));
 
     com_.Write(start1);
     com_.Write(start2);
-    com_.Write(status);
+    com_.Write(solt);
     com_.Write((uint8_t )commandName);
     com_.Write(crc);
+    for (int s=1 ; s <= 2*N; s++){
+        com_.Write((uint8_t ) temp_[s]);
+    }
+    com_.Write(end1);
+    com_.Write(end2);
 
-    if (Parameter1>=256){
-        uint8_t a1 = Parameter1 / 256;
-        uint8_t a2 = Parameter1 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter1);}
-    com_.Write(end);
-    debug.Return();
+    delete [] params;
     return 1;
 }
 
-uint16_t Conserial:: SendUart (char commandName, uint16_t Parameter1, uint16_t Parameter2){
-     DebugLogger debug(__FUNCTION__, 3, commandName, Parameter1, Parameter2);
-    uint8_t start1 = 255;
-    uint8_t start2 = 254;
-    uint8_t status = 0;
-    uint16_t end = 65535;
-    uint8_t null = 0;
-    uint8_t crc;
+uint8_t Conserial::CheckStatus(uint8_t status){
+    DebugLogger debug(__FUNCTION__);
+    uint8_t errorCode = 3;
+    switch (status) {
+    case 1:
+        errorCode = 0;
+        break;//Успех
+    case 2:
+        cout<<"Количество принятых параметров превышает допустимый предел"<<endl;
+        errorCode = 3;
+        break;
+    case 4:
+        cout<<"Необнаружена метка конца пакета"<<endl;
+        errorCode = 3;
+        break;
+    case 8:
+        cout<<"Неизвестный ID  Команды"<<endl;
+        errorCode = 3;
+        break;
+    case 16:
+        cout<<"Несоответствие CRC"<<endl;
+        errorCode = 3;
+        break;
+    case 17:
+        errorCode = 1; //Проблема с подключением
+        break;
+    case 18:
+        errorCode = 2; //Переданы неверные параметры на вход функции
+        break;
+    default: errorCode = 3; //Битый пакет (Не известно)
+    }
 
-    uint16_t tempData_=0;
-    tempData_ = (uint8_t) commandName + Parameter1 + Parameter2;
-    crc = Crc8((uint8_t *)&tempData_, sizeof(tempData_));
-
-    com_.Write(start1);
-    com_.Write(start2);
-    com_.Write(status);
-    com_.Write((uint8_t)commandName);
-    com_.Write(crc);
-
-    if (Parameter1>=256){
-        uint8_t a1 = Parameter1 / 256;
-        uint8_t a2 = Parameter1 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t) Parameter1);}
-
-    if (Parameter2>=256){
-        uint8_t a1 = Parameter2 / 256;
-        uint8_t a2 = Parameter2 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t) Parameter2);}
-
-    com_.Write(end);
-    debug.Return();
-    return 1;
+    return errorCode;
 }
+Conserial::UartResponse Conserial::ParsePackege(unsigned int timeout){
+    bool startPackFlag_=false;
+    bool successReceipt_=false;
+    bool flag_ = 0;
+    bool a = 0;
+    array <uint16_t, 201>  params  = {0};
+    Conserial::UartResponse pack_= {0,0,0,{0}};
+    uint8_t currentByte_=0;
+    timeout = timeout * 1000;
 
-uint16_t Conserial:: SendUart (char commandName, uint16_t Parameter1, uint16_t Parameter2, uint16_t Parameter3){
-     DebugLogger debug(__FUNCTION__, 4, commandName, Parameter1, Parameter2, Parameter3);
-    uint8_t start1 = 255;
-    uint8_t start2 = 254;
-    uint8_t status = 0;
-    uint16_t end = 65535;
-    uint8_t null = 0;
-    uint8_t crc;
 
-    uint16_t tempData_=0;
-    tempData_ = (uint8_t) commandName + Parameter1 + Parameter2 + Parameter3;
-    crc = Crc8((uint8_t *)&tempData_, sizeof(tempData_));
-    com_.Write(start1);
-    com_.Write(start2);
-    com_.Write(status);
-    com_.Write((uint8_t )commandName);
-    com_.Write(crc);
+    if (!com_.IsOpened())
+    {
+        return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
+    }
+    clock_t end_time = clock() + timeout * (CLOCKS_PER_SEC/1000) ;
+    while (clock()<end_time) {
+        while (startPackFlag_ != true && clock()<end_time) {
+            currentByte_ = com_.ReadChar(a);
+            if(a){
+                if (currentByte_ == 255){
+                    flag_ = 1;
+                }
+                else{
+                    if (flag_ == 1){
+                        if (currentByte_ != 254)
+                        {
+                            flag_ = 0;
+                        }
+                        else{
+                            startPackFlag_ = true;
+                            break;
+                        }
+                    }
+                    else {
+                        flag_ = 0;
+                    }
+                }
+            }
+        }
 
-    if (Parameter1>=256){
-        uint8_t a1 = Parameter1 / 256;
-        uint8_t a2 = Parameter1 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter1);}
+        if (startPackFlag_ == true){
+            int count = 10;
+            int paramCnt =1;
+            unsigned short p=0;
+            while (p != 65535 && clock()<end_time) {
+                currentByte_ = com_.ReadChar(a);
+                if(a){
+                    if (count>9){
+                        pack_.status_=currentByte_;
+                    }
+                    else if (count>8){
+                        pack_.nameCommand_=currentByte_;
+                    }
+                    else if (count>7){
+                        pack_.crc_=currentByte_;
+                    }
+                    else{
+                        p = p + currentByte_;
+                        if (count>6){ p = p<<8; }
+                        else{
+                            paramCnt++;
+                            if (paramCnt> (int)params.size()+1){
+                                return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
+                            }
+                            if (p==65535){
+                                successReceipt_= true;
+                                break;}
+                            else{
+                                params[0] = paramCnt-1;
+                                params[paramCnt-1]= p;
+                                p=0;
+                                count=8;
+                            }
+                        }
+                    }
+                    count--;
+                }
+            }
+        }
+        else{
+            cout<< " Ответа нет или он некорректный"<<endl;
+            return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
+        }
+        if( successReceipt_ == true){
+            break;
+        }
+    }
 
-    if (Parameter2>=256){
-        uint8_t a1 = Parameter2 / 256;
-        uint8_t a2 = Parameter2 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter2);}
-
-    if (Parameter3>=256){
-        uint8_t a1 = Parameter3 / 256;
-        uint8_t a2 = Parameter3 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter3);}
-
-    com_.Write(end);
-    debug.Return();
-    return 1;
-}
-
-uint16_t Conserial:: SendUart (char commandName, uint16_t Parameter1, uint16_t Parameter2, uint16_t Parameter3, uint16_t Parameter4){
-     DebugLogger debug(__FUNCTION__, 5, commandName, Parameter1, Parameter2, Parameter3, Parameter4);
-    uint8_t start1 = 255;
-    uint8_t start2 = 254;
-    uint8_t status = 0;
-    uint16_t end = 65535;
-    uint8_t null = 0;
-    uint8_t crc;
-
-    uint16_t tempData_=0;
-    tempData_ = (uint8_t) commandName + Parameter1 + Parameter2 + Parameter3 + Parameter4;
-    crc = Crc8((uint8_t *) &tempData_, sizeof(tempData_));
-    com_.Write(start1);
-    com_.Write(start2);
-    com_.Write(status);
-    com_.Write((uint8_t )commandName);
-    com_.Write(crc);
-
-    if (Parameter1>=256){
-        uint8_t a1 = Parameter1 / 256;
-        uint8_t a2 = Parameter1 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter1);}
-
-    if (Parameter2>=256){
-        uint8_t a1 = Parameter2 / 256;
-        uint8_t a2 = Parameter2 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t) Parameter2);}
-
-    if (Parameter3>=256){
-        uint8_t a1 = Parameter3 / 256;
-        uint8_t a2 = Parameter3 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t) Parameter3);}
-
-    if (Parameter4>=256){
-        uint8_t a1 = Parameter4 / 256;
-        uint8_t a2 = Parameter4 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t) Parameter4);}
-
-    com_.Write(end);
-    debug.Return();
-    return 1;
-}
-
-uint16_t Conserial:: SendUart (char commandName, uint16_t Parameter1, uint16_t Parameter2, uint16_t Parameter3, uint16_t Parameter4, uint16_t Parameter5){
-     DebugLogger debug(__FUNCTION__, 6, commandName, Parameter1, Parameter2, Parameter3, Parameter4, Parameter5);
-    uint8_t start1 = 255;
-    uint8_t start2 = 254;
-    uint8_t status = 0;
-    uint16_t end = 65535;
-    uint8_t null = 0;
-    uint8_t crc;
-
-    uint16_t tempData_=0;
-
-    tempData_ = (uint8_t) commandName + Parameter1 + Parameter2 + Parameter3 + Parameter4 + Parameter5;
-    crc = Crc8((uint8_t *)&tempData_, sizeof(tempData_));
-    com_.Write(start1);
-    com_.Write(start2);
-    com_.Write(status);
-    com_.Write((uint8_t )commandName);
-    com_.Write(crc);
-
-    if (Parameter1>=256){
-        uint8_t a1 = Parameter1 / 256;
-        uint8_t a2 = Parameter1 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter1);}
-
-    if (Parameter2>=256){
-        uint8_t a1 = Parameter2 / 256;
-        uint8_t a2 = Parameter2 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter2);}
-
-    if (Parameter3>=256){
-        uint8_t a1 = Parameter3 / 256;
-        uint8_t a2 = Parameter3 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t ) Parameter3);}
-
-    if (Parameter4>=256){
-        uint8_t a1 = Parameter4 / 256;
-        uint8_t a2 = Parameter4 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t) Parameter4);}
-
-    if (Parameter5>=256){
-        uint8_t a1 = Parameter5 / 256;
-        uint8_t a2 = Parameter5 % 256;
-        com_.Write(a1);
-        com_.Write(a2);
-    }else{
-        com_.Write(null);
-        com_.Write((uint8_t) Parameter5);}
-
-    com_.Write(end);
-    debug.Return();
-    return 1;
-}
-
-//Функция чтения по Uart
-void Conserial::ReadUart(ce::UartResponse * packege_)
-{
-     DebugLogger debug(__FUNCTION__);
-     ce::UartResponse pack;
-
-    pack = com_.Read_com(timeoutTime_);
-    uint16_t temp = pack.nameCommand_ + pack.parameters_[0] + pack.parameters_[1]
-            + pack.parameters_[2] + pack.parameters_[3] + pack.parameters_[4]
-            + pack.parameters_[5] + pack.parameters_[6] + pack.parameters_[7]
-            + pack.parameters_[8]+ pack.parameters_[9];
+    //Формирование параметров
+    for(int i=0; i<params[0]; i++){
+        pack_.parameters_[i] = params[i+1];
+    }
+    uint16_t temp = pack_.nameCommand_ + pack_.parameters_[0] + pack_.parameters_[1]
+                    + pack_.parameters_[2] + pack_.parameters_[3] + pack_.parameters_[4]
+                    + pack_.parameters_[5] + pack_.parameters_[6] + pack_.parameters_[7]
+                    + pack_.parameters_[8]+ pack_.parameters_[9];
     uint8_t crc = Crc8((uint8_t*)&temp, sizeof(temp));
-    if (crc == pack.crc_){ * packege_ = pack;}
-    else{* packege_ = {3,0,0,{0,0,0,0,0,0,0,0,0,0}};
-        cout<< "WrongCheckSum"<<endl; }
+
+
+    //Подсчет CRC
+
+    if(!(crc == pack_.crc_)){
+        cout<< "WrongCheckSum"<<"\t" << (int)crc << (int) pack_.crc_<<endl;
+        return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
+    }
+
+    return pack_ ;
 }
 
 // Функция подсчёта контрольной суммы
 uint8_t Conserial::Crc8(uint8_t *pcBlock, uint8_t len)
 {
-     DebugLogger debug(__FUNCTION__);
+    DebugLogger debug(__FUNCTION__);
     uint8_t crc = 0xFF;
 
     while (len--)
         crc = Crc8Table[crc ^ *pcBlock++];
-
     debug.Return();
     return crc;
 }
 
-uint16_t Conserial::CalcSteps(angle_t angle, angle_t rotateStep){
-    /*!!!!!КОСТЫЛЬ!!!!>*/
-     DebugLogger debug(__FUNCTION__, 2, angle, rotateStep);
+uint16_t Conserial::CalcStep(angle_t angle, angle_t rotateStep){
+
+    DebugLogger debug(__FUNCTION__, 2, angle, rotateStep);
     if (angle < 0){
         angle = angle + 360;
     }
-    /*<!!!!!КОСТЫЛЬ!!!!*/
+
     angle = fmod(angle , 360.0); // Подсчет кратчайшего угла поворота
 
     int Steps = round (angle / rotateStep); //Подсчёт и округление шагов
     return debug.Return(Steps);
 }
 
-}//namespace
+WAngles<adc_t> Conserial::CalcSteps(WAngles<angle_t> angles){
 
+    DebugLogger debug(__FUNCTION__, 2, angles, standOptions.rotateStep_);
+    WAngles<adc_t> steps;
+    steps.aHalf_ = CalcStep(angles.aHalf_,standOptions.rotateStep_);
+    steps.aQuart_ = CalcStep(angles.aQuart_,standOptions.rotateStep_);
+    steps.bHalf_ = CalcStep(angles.bHalf_,standOptions.rotateStep_);
+    steps.bQuart_ = CalcStep(angles.bQuart_,standOptions.rotateStep_);
+    return steps;
+}
+
+WAngles<angle_t> Conserial::CalcAngles(WAngles<adc_t> steps)
+{
+    DebugLogger debug(__FUNCTION__, 2, steps, standOptions.rotateStep_);
+    WAngles<angle_t> angles;
+    angles.aHalf_ = ((float)steps.aHalf_) * standOptions.rotateStep_;
+    angles.aQuart_ = ((float)steps.aQuart_) * standOptions.rotateStep_;
+    angles.bHalf_ = ((float)steps.bHalf_) * standOptions.rotateStep_;
+    angles.bQuart_ = ((float)steps.bQuart_) * standOptions.rotateStep_;
+    return angles;
+}
+
+bool Conserial::StandIsConected (){
+    DebugLogger debug(__FUNCTION__);
+    if(!com_.IsOpened())
+    {
+        com_.Open();
+        if(!com_.IsOpened())
+            return 0;
+    }
+    return 1;
+};
+
+
+}//namespace
