@@ -34,21 +34,26 @@ public:
     virtual api::AdcResponse SetTimeout(adc_t timeout);
     virtual api::AdcResponse SetLaserState(adc_t on);
     virtual api::AdcResponse SetLaserPower(adc_t power);
+    virtual api::AngleResponse SetPlateAngle(adc_t plateNumber, angle_t angle);
     virtual api::WAnglesResponse SetPlatesAngles(WAngles<angle_t> angles);
     virtual api::AdcResponse GetLaserState();
     virtual api::AdcResponse GetLaserPower();
-    virtual api::InitResponse  GetInitParams();
+    virtual api::AdcResponse GetMaxLaserPower();
+    virtual api::WAnglesResponse GetStartPlatesAngles();
     virtual api::WAnglesResponse GetPlatesAngles();
+    virtual api::SLevelsResponse GetStartLightNoises();
     virtual api::SLevelsResponse GetSignalLevels();
     virtual api::AngleResponse GetRotateStep();
     virtual api::SLevelsResponse GetLightNoises();
+    virtual api::SLevelsResponse GetMaxSignalLevels();
     virtual api::AdcResponse GetErrorCode();
     virtual api::AdcResponse GetTimeout();
     virtual api::WAnglesResponse UpdateBaseAngle(WAngles<angle_t> angles);
     virtual api::WAnglesResponse ReadBaseAngles();
     virtual api::AdcResponse ReadEEPROM(uint8_t numberUnit_);
     virtual api::AdcResponse WriteEEPROM(uint8_t numberUnit_, uint16_t param_);
-    ce::ceSerial SendUart (char commandName);
+
+private:
     struct StandOptions{
         adc_t laserState_ = 0;
         adc_t laserPower_ = 0;
@@ -65,8 +70,6 @@ public:
     };
     Conserial::StandOptions standOptions; // Структура, хранящая текущее состояние стенда
 
-private:
-
     struct UartResponse{
         uint8_t status_= 0;
         uint8_t nameCommand_ = 0;
@@ -74,6 +77,7 @@ private:
         uint16_t parameters_ [10] = {0,0,0,0,0,0,0,0,0,0};
 
     };
+
     ce::ceSerial com_; // Обект класса для соединения с МК
 
     uint8_t Crc8(uint8_t *pcBlock, uint8_t len);
@@ -133,16 +137,20 @@ private:
         {"SendMessage", 'B'},
         {"SetLaserState", 'C'},
         {"SetLaserPower", 'D'},
+        {"SetPlateAngle", 'E'},
         {"SetTimeout", 'F'},
         {"GetErrorCode", 'G'},
         {"GetLaserState", 'H'},
         {"GetLaserPower", 'I'},
         {"GetTimeout", 'J'},
-        {"GetInitParams", 'K'},
+        {"GetStartPlatesAngles", 'K'},
         {"GetCurPlatesAngles", 'L'},
         {"GetSignalLevel", 'M'},
         {"GetRotateStep", 'N'},
+        {"GetMaxLaserPower", 'O'},
         {"GetLightNoises", 'P'},
+        {"GetStartLightNoises", 'Q'},
+        {"GetMaxSignalLevel", 'R'},
         {"RunSelfTest", 'S'},
         {"InitByButtons", 'T'},
         {"SetPlatesAngles", 'U'},
