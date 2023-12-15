@@ -9,17 +9,29 @@
 #include <abstracthardwareapi.h>
 #include <map>
 #include <ctime>
-#include <debuglogger.h>
 #include <string>
 #include <cstring>
 #include <iostream>
 #include <fstream>
 #include <stdarg.h>
 
+#include <cstddef>
+#include <bitset>
+
 using namespace std;
 namespace hwe
 {
-
+struct versionFirmwareResponse{
+    uint16_t major_ = 0;
+    uint16_t minor_ = 0;
+    uint16_t micro_ = 0;
+    adc_t errorCode_ = 0;
+};
+struct versionProtocolResponse{
+    uint16_t version_ = 0;
+    uint16_t subversion_ = 0;
+    adc_t errorCode_ = 0;
+};
 class Conserial : public AbstractHardwareApi
 {
 public:
@@ -38,53 +50,88 @@ public:
     virtual api::WAnglesResponse SetPlatesAngles(WAngles<angle_t> angles);
     virtual api::AdcResponse GetLaserState();
     virtual api::AdcResponse GetLaserPower();
-    virtual api::InitResponse  GetInitParams();
+
+    api::InitResponse  GetInitParams();
+    virtual api::AdcResponse GetMaxLaserPower();
+    virtual api::WAnglesResponse GetStartPlatesAngles();
+    virtual api::SLevelsResponse GetStartLightNoises();
+    virtual api::SLevelsResponse GetMaxSignalLevels();
+    virtual api::AngleResponse SetPlateAngle(adc_t plateNumber, angle_t angle);
+
     virtual api::WAnglesResponse GetPlatesAngles();
     virtual api::SLevelsResponse GetSignalLevels();
     virtual api::AngleResponse GetRotateStep();
     virtual api::SLevelsResponse GetLightNoises();
-    virtual api::AdcResponse GetHardwareState();
+    api::AdcResponse GetHardwareState();
+    virtual api::AdcResponse GetErrorCode();
     virtual api::AdcResponse GetTimeout();
     virtual api::WAnglesResponse UpdateBaseAngle(WAngles<angle_t> angles);
     virtual api::WAnglesResponse ReadBaseAngles();
     virtual api::AdcResponse ReadEEPROM(uint8_t numberUnit_);
     virtual api::AdcResponse WriteEEPROM(uint8_t numberUnit_, uint16_t param_);
+
     void Upload (string path);
     api::AdcResponse CreateConfigSecret(string passwd);
     api::AdcResponse OpenConfigMode(string passwd);
     uint16_t CloseConfigMode();
     uint16_t GetCurrentMode();
 
+    hwe::versionProtocolResponse GetProtocolVersion ();
+    hwe::versionFirmwareResponse GetCurrentFirmwareVersion();
+    uint16_t GetMaxPayloadSize();
+
+private:
+    struct versionFirmware{
+        uint16_t major = 0;
+        uint16_t minor = 0;
+        uint16_t micro = 0;
+    };
+    struct versionProtocol{
+        uint16_t version = 0;
+        uint16_t subversion = 0;
+    };
+    versionFirmware versionFirmware = {1,0,0};
+    versionProtocol versionProtocol = {1,5};
+
     struct StandOptions{
         adc_t premissions = 0;
         adc_t laserState_ = 0;
         adc_t laserPower_ = 0;
-        SLevels<hwe::adc_t> signalLevels_;
-        WAngles<angle_t>curAngles_;
-        SLevels<hwe::adc_t> lightNoises;
-
-        SLevels<hwe::adc_t> startLightNoises_;
-        WAngles<hwe::angle_t> startPlatesAngles_;
-        SLevels<hwe::adc_t> maxSignalLevels_;
+        SLevels<hwe::adc_t> signalLevels_ = {0,0};
+        WAngles<angle_t>curAngles_ = {0,0,0,0};
+        SLevels<hwe::adc_t> lightNoises = {0,0};
+        SLevels<hwe::adc_t> startLightNoises_= {0,0};
+        WAngles<hwe::angle_t> startPlatesAngles_ = {0,0,0,0};
+        SLevels<hwe::adc_t> maxSignalLevels_ = {0,0};
         adc_t timeoutTime_ = 2; //sec
         angle_t rotateStep_ = 0.3;
         adc_t maxLaserPower_ = 100;
+        adc_t maxPayloadSize = 30;
     };
+
     Conserial::StandOptions standOptions; // Структура, хранящая текущее состояние стенда
 
-private:
+    struct UartResponse{
+        uint8_t status_= 0;
+        uint8_t nameCommand_ = 0;
+        uint8_t crc_= 0;
+        uint16_t parameters_ [10] = {0,0,0,0,0,0,0,0,0,0};
+    };
     ce::ceSerial com_; // Обект класса для соединения с МК
 
     uint8_t Crc8(uint8_t *pcBlock, uint8_t len);
+    UartResponse ParsePackege(unsigned int timeout);
+    UartResponse ParsePackege_1_0(unsigned int timeout);
+
 
     uint16_t CalcStep(angle_t angle, angle_t rotateStep);
     WAngles<adc_t> CalcSteps(WAngles<angle_t> angles);
     WAngles<angle_t> CalcAngles(WAngles<adc_t> steps);
 
-    ce::UartResponse Twiting (char commandName, int N,... );
-    ce::UartResponse Twiting (char commandName, uint16_t * params, uint16_t length);
+    UartResponse Twiting (char commandName, int N,... );
+    UartResponse Twiting (char commandName, uint8_t * bytes, uint16_t length);
 
-    uint16_t SendUart (char commandName, int N, uint16_t * params);
+    uint16_t SendUart (char commandName, uint8_t * bytes, uint16_t N );
 
     uint8_t CheckStatus(uint8_t status);
     bool StandIsConected ();
@@ -128,6 +175,9 @@ private:
 
     //Мапа название команды -- ключ команды
     const std::map <std::string, char> dict_ = {
+        {"GetProtocolVersion", 0x10},
+        {"GetCurrentFirmwareVersion", 0x11},
+        {"GetMaxPayloadSize", 0x11},
         {"CreateConfigSecret", 0x30},
         {"OpenConfigMode", 0x31},
         {"CloseConfigMode", 0x32},
@@ -138,6 +188,7 @@ private:
         {"SetLaserPower", 0x44 }, //D
         {"SetTimeout", 0x46 },    //F
         {"GetHardwareState", 0x47 },  //G
+        {"GetErrorCode", 0x47},
         {"GetLaserState",  0x48}, //H
         {"GetLaserPower",  0x49}, //I
         {"GetTimeout", 0x4A},     //J
@@ -158,4 +209,3 @@ private:
 
 } //namespace
 #endif // CONSERIAL_H
-
