@@ -10,28 +10,88 @@
 // https://msdn.microsoft.com/en-us/library/ff802693.aspx
 // http://www.cplusplus.com/forum/unices/10491/
 
+
+#ifndef CESERIAL_H
+#define CESERIAL_H
 #include <string>
+#include <cstdlib>
+#include <cstdio>
+#include <cstring>
 #include <array>
+
+#if defined(_WIN64) || defined(__WIN32__) || defined(_WIN32) || defined(WIN32) || defined(__WINDOWS__) || defined(__TOS_WIN__) || defined(__CYGWIN__)
+#define CE_WINDOWS
+#elif defined(unix) || defined(__unix) || defined(__unix__)
+#define CE_LINUX
+#endif
+
+#ifdef CE_WINDOWS
+#include <windows.h>
+#endif
 
 namespace ce {
 
-struct UartResponse{
-        uint8_t crc_= 0;
-        uint8_t nameCommand_ = 0;
-        uint8_t status_= 0;
-        uint16_t parameters_ [75] = {0};
-    };
+
 
 class ceSerial {
-    uint16_t rxchar_;
-    std::string port_;
-    long baud_;
-    long dsize_;
-    char parity_;
-    float stopbits_;
-    long fd_; //serial_fd
 private:
-    uint8_t Crc8(uint8_t *pcBlock, uint8_t len);
+    uint16_t rxchar;
+    std::string port;
+    long baud;
+    long dsize;
+    char parity;
+    float stopbits;
+    bool stdbaud;
+
+#ifdef CE_WINDOWS
+    HANDLE hComm; //handle
+    OVERLAPPED osReader;
+    OVERLAPPED osWrite;
+    BOOL fWaitingOnRead;
+    COMMTIMEOUTS timeouts_ori;
+#else
+    long fd; //serial_fd
+#endif
+
+public:
+    struct UartResponse{
+        uint8_t status_= 0;
+        uint8_t nameCommand_ = 0;
+        uint8_t crc_= 0;
+        uint16_t parameters_ [10] = {0,0,0,0,0,0,0,0,0,0};
+
+    };
+    static void Delay(unsigned long ms);
+    ceSerial();
+    ceSerial(std::string Device, long BaudRate, long DataSize, char ParityType, float NStopBits);
+    ~ceSerial();
+    long Open(void);//return 0 if success
+    void Close();
+    char ReadChar(bool& success);//return read char if success
+    bool WriteChar(char ch);    //return success flag
+    bool Write(uint8_t data);
+    bool Write(uint16_t data);
+    bool Write(char * data);//write null terminated string and return success flag
+    bool Write(char *data,long n);
+    bool SetRTS(bool value);//return success flag
+    bool SetDTR(bool value);//return success flag
+    bool GetCTS(bool& success);
+    bool GetDSR(bool& success);
+    bool GetRI(bool& success);
+    bool GetCD(bool& success);
+    bool IsOpened();
+    void SetPortName(std::string Port);
+    std::string GetPort();
+    void SetBaudRate(long baudrate);
+    long GetBaudRate();
+    void SetDataSize(long nbits);
+    long GetDataSize();
+    void SetParity(char p);
+    char GetParity();
+    void SetStopBits(float nbits);
+    float GetStopBits();
+
+
     const uint8_t Crc8Table[256] = {
         0x00, 0x31, 0x62, 0x53, 0xC4, 0xF5, 0xA6, 0x97,
         0xB9, 0x88, 0xDB, 0xEA, 0x7D, 0x4C, 0x1F, 0x2E,
@@ -66,41 +126,8 @@ private:
         0x82, 0xB3, 0xE0, 0xD1, 0x46, 0x77, 0x24, 0x15,
         0x3B, 0x0A, 0x59, 0x68, 0xFF, 0xCE, 0x9D, 0xAC
     };
-
-
-public:
-    static void Delay(unsigned long ms);
-    ceSerial();
-    ceSerial(std::string Device, long BaudRate, long DataSize, char ParityType, float NStopBits);
-    ~ceSerial();
-    long Open(void);//return 0 if success
-    void Close();
-    char ReadChar();
-    char ReadChar(bool& success);//return read char if success
-    ce::UartResponse Read_com(unsigned int timeout);
-    bool WriteChar(char ch);    //return success flag
-    bool Write(uint16_t data);
-    bool Write(uint8_t data);
-    bool Write(char * data);//write null terminated string and return success flag
-    bool Write(char *data,long n);
-    bool SetRTS(bool value);//return success flag
-    bool SetDTR(bool value);//return success flag
-    bool GetCTS(bool& success);
-    bool GetDSR(bool& success);
-    bool GetRI(bool& success);
-    bool GetCD(bool& success);
-    bool IsOpened();
-    void SetPort(std::string Port);
-    std::string GetPort();
-    void SetBaudRate(long baudrate);
-    long GetBaudRate();
-    void SetDataSize(long nbits);
-    long GetDataSize();
-    void SetParity(char p);
-    char GetParity();
-    void SetStopBits(float nbits);
-    float GetStopBits();
 };
 
 } // namespace ce
 
+#endif
