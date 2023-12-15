@@ -783,7 +783,7 @@ Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, u
             //Чтение ответа
             if (versionProtocol.version == 1 && versionProtocol.subversion == 2){
                 pack =  ParsePackege(standOptions.timeoutTime_);
-            }else if(versionProtocol.version == 1 && versionProtocol.subversion == 1){
+            }else if(versionProtocol.version == 1 && versionProtocol.subversion == 0){
                 pack =  ParsePackege_1_0(standOptions.timeoutTime_);
             }
 
@@ -821,7 +821,7 @@ uint16_t Conserial:: SendUart (char commandName, uint8_t * bytes, uint16_t N){
         }
         com_.Write(solt);
         com_.Write(crc);
-    }else if(versionProtocol.version == 1 && versionProtocol.subversion == 1){
+    }else if(versionProtocol.version == 1 && versionProtocol.subversion == 0){
         com_.Write(solt);
         com_.Write((uint8_t )commandName);
         com_.Write(crc);
