@@ -115,7 +115,7 @@ int main()
 //    example.GetInitParams();
     //example.GetSignalLevels();
 //    sleep(10);
-//    example.SetLaserState(0);
+   example.SetLaserState(0);
  example.Init();
  example.SetLaserState(1);
 //    example.SetLaserState(0);
