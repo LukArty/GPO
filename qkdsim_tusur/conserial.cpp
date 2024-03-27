@@ -14,7 +14,7 @@ Conserial::Conserial()
 #ifdef CE_WINDOWS
     com_.SetPort("COM4");
 #else
-    com_.SetPort("/dev/ttyStandQKD");
+    com_.SetPort("/dev/ttyUSB1");
 #endif
     com_.SetBaudRate(115200);
     com_.SetDataSize(8);
@@ -755,10 +755,13 @@ Conserial::UartResponse Conserial::Twiting (char commandName, int N, ... ){
         va_end(temp_params);
         uint8_t * temp_= new uint8_t [2*N];
 
-        for (int i = 0; i < 2 * N; i= i+2){
-            temp_[i] = params[i]>>8;
-            temp_[i+1] = params[i];
+        int j = 0 ;
+        for (int i = 0; i <= 2 * N; i= i+2){
+            temp_[i] = params[j]>>8;
+            temp_[i+1] = params[j];
+            j++;
         };
+
 
         int count = 0;
         while (count < 3) {
