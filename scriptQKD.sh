@@ -6,6 +6,7 @@ pathSoft="./QKDStand"
 searchString="ENV{PRODUCT}==\"1a86/7523/*\", ENV{BRLTTY_BRAILLE_DRIVER}=\"bm\", GOTO=\"brltty_usb_run\""
 
 LinkString='KERNEL=="tty*", SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", SYMLINK+="ttyStandQKD"'
+LinkString2='KERNEL=="tty*", SUBSYSTEM=="tty", ATTRS{idVendor}=="0403", ATTRS{idProduct}=="6001", SYMLINK+="ttyStandQKD"'
 
  
  
@@ -30,10 +31,12 @@ fi
 #Добавление ссылки на порт подключения стенда
 if [ -f $fileRedirect ] && ! grep -qF "$LinkString" $fileRedirect
 then
-	echo $LinkString >> $fileRedirect 
+	echo $LinkString >> $fileRedirect
+ 	echo $LinkString2 >> $fileRedirect 
 else 
 	touch $fileRedirect 
-	echo $LinkString >> $fileRedirect 
+	echo $LinkString >> $fileRedirect
+ 	echo $LinkString2 >> $fileRedirect
 fi
 
 #Запуск Программного обеспечения
