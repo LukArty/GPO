@@ -1,19 +1,20 @@
 /// @file
 /// @brief Файл реализации класса, общающегося с микроконтроллером.
-///
+/// @version 1.5
 /// @copyright Copyright 2022 InfoTeCS.
 
 #include <conserial.h>
+//#define NO_SERIAL_LOG
 
 namespace hwe
 {
-
+/// @brief Интерфейс для взаимодействия с аппаратной платформой.
 Conserial::Conserial()
 {
 #ifdef CE_WINDOWS
-    com_.SetPortName(string("COM4"));
+    com_.SetPort("COM4");
 #else
-    com_.SetPortName(string("/dev/ttyStandQKD"));
+    com_.SetPort("/dev/ttyStandQKD");
 #endif
     com_.SetBaudRate(115200);
     com_.SetDataSize(8);
@@ -25,8 +26,20 @@ Conserial::Conserial()
 
 }
 
+std::string Conserial::GetComPortName()const
+{
+    return com_.GetPort();
+}
+
+void Conserial::SetComPortName(const char* port)
+{
+    com_.SetPort(port);
+}
+
 Conserial::~Conserial()
-{ }
+{
+    out_.close();
+}
 
 api:: InitResponse Conserial:: Init()
 {
@@ -740,13 +753,11 @@ Conserial::UartResponse Conserial::Twiting (char commandName, int N, ... ){
             params[i]= va_arg(temp_params, unsigned int);
         }
         va_end(temp_params);
-
         uint8_t * temp_= new uint8_t [2*N];
-        int j = 0;
-        for (int i = 1; i <= 2 * N; i= i+2){
-            temp_[i] = params[j]>>8;
-            temp_[i+1] = params[j];
-            j++;
+
+        for (int i = 0; i < 2 * N; i= i+2){
+            temp_[i] = params[i]>>8;
+            temp_[i+1] = params[i];
         };
 
         int count = 0;
@@ -756,13 +767,22 @@ Conserial::UartResponse Conserial::Twiting (char commandName, int N, ... ){
 
             //Чтение ответа
             pack = ParsePackege(standOptions.timeoutTime_);
-            if (pack.status_==1){break;}
+            if (pack.status_==1){
+                break;
+            }
             ++count;
         }
         delete [] params;
     }
+
     pack.status_= CheckStatus(pack.status_);
     return pack;
+}
+
+void Conserial::FirmwareUpdate (string path){
+    string command ="avrdude -v -patmega328p -c arduino -P /dev/ttyStandQKD" + com_.GetPort() +" -b 115200 -D -U flash:w:\"" + path + "\":i";
+    const char * mainCommand= command.c_str();
+    system(mainCommand);
 }
 
 Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, uint16_t length){
@@ -787,10 +807,13 @@ Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, u
                 pack =  ParsePackege_1_0(standOptions.timeoutTime_);
             }
 
-            if (pack.status_==1){break;}
+            if (pack.status_==1){
+                break;
+            }
             ++count;
         }
     }
+
     pack.status_= CheckStatus(pack.status_);
     return pack;
 }
@@ -800,36 +823,66 @@ uint16_t Conserial:: SendUart (char commandName, uint8_t * bytes, uint16_t N){
     uint8_t start1 = 255;
     uint8_t start2 = 254;
     uint16_t end = 65535;
+    uint8_t payload [2] = {uint8_t((N+2)>>8), uint8_t(N+2)};
     uint8_t solt = 0;
-    uint8_t crc;
+    uint8_t crc = 0;
 
-    uint8_t temp_[256] = {(uint8_t) commandName,};
+    uint8_t temp_[256] = {uint8_t(commandName)};
+    if (versionProtocol.version == 1 &&versionProtocol.subversion == 5){
+        temp_[0] = payload[0];
+        temp_[1] = payload[1];
+        temp_[2] = commandName;
+        for (int i = 3; i <=  N+2; i++){
+            temp_[i] = bytes[i-3];
+        };
+        crc = Crc8((uint8_t *) &temp_, N+4);//bytes +pld0+pld1+ cN +solt
+    }else{
+        for (int i = 1; i <=  N; i++){
+            temp_[i] = bytes[i-1];
+        };
+        crc = Crc8((uint8_t *) &temp_, N+2);//bytes + cN +solt
+    }
 
-    for (int i = 1; i <=  N; i++){
-        temp_[i] = bytes[i-1];
-    };
-    crc = Crc8((uint8_t *) &temp_, N+2);
 
     com_.Write(start1);
     com_.Write(start2);
+    logOut("Sending message" + currentDateTime());
+    logOut("send byte:" + to_string(start1));
+    logOut("send byte:" + to_string(start2));
     if (versionProtocol.version == 1 && (versionProtocol.subversion == 2 || versionProtocol.subversion == 5)){
         if (versionProtocol.subversion == 5){
-            com_.Write(N);  // Payload_size
+            com_.Write(payload [0]);
+            com_.Write(payload [1]);  // Payload_size
+            logOut("send byte:" + to_string(payload [0]));
+            logOut("send byte:" + to_string(payload [1]));
+            for (int s=2 ; s <= N+2; s++){
+                com_.Write(temp_[s]);
+                logOut("send byte:" + to_string(temp_[s]));
+            }
+        }else{
+            for (int s=0 ; s <= N; s++){
+                logOut("send byte:" + to_string(temp_[s]));
+            }
         }
-        for (int s=0 ; s <= N; s++){
-            com_.Write(temp_[s]);
-        }
+
         com_.Write(solt);
         com_.Write(crc);
+        logOut("send byte:" + to_string(solt));
+        logOut("send byte:" + to_string(crc));
     }else if(versionProtocol.version == 1 && versionProtocol.subversion == 0){
         com_.Write(solt);
-        com_.Write((uint8_t )commandName);
+        com_.Write((uint16_t )commandName);
         com_.Write(crc);
+        logOut("send byte:" + to_string(solt));
+        logOut("send byte:" + to_string((uint16_t )commandName));
+        logOut("send byte:" + to_string(crc));
         for (int s=1 ; s <= N; s++){
             com_.Write(temp_[s]);
+            logOut("send byte:" + to_string(temp_[s]));
         }
     }
     com_.Write(end);
+    logOut("send end:" + to_string(end));
     return 1;
 };
 
@@ -848,10 +901,12 @@ Conserial::UartResponse Conserial::ParsePackege(unsigned int timeout){
         return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
     }
     clock_t end_time = clock() + timeout * (CLOCKS_PER_SEC/1000) ;
+    logOut("Read_com started to find packet at " + currentDateTime());
     while (clock()<end_time) {
         while (startPackFlag_ != true && clock()<end_time) {
             currentByte_ = com_.ReadChar(a);
             if(a){
+                logOut("read byte:" + to_string((int)currentByte_));
                 if (currentByte_ == 255){
                     flag_ = 1;
                 }
@@ -871,20 +926,36 @@ Conserial::UartResponse Conserial::ParsePackege(unsigned int timeout){
                     }
                 }
             }
+            if (startPackFlag_){
+                logOut("Started read packet (marker successfull)");
+            }
         }
 
         if (startPackFlag_ == true){
             int count = 9;
-            int paramCnt =1;
+            if (versionProtocol.version == 1 && versionProtocol.subversion == 5){
+                count = 11;
+            }
+            int paramCnt = 1;
             unsigned short p=0;
+            uint8_t tempPld = 0;
             while (p != 65535 && clock()<end_time) {
                 currentByte_ = com_.ReadChar(a);
                 if(a){
-                    if (count>8){
-                        pack_.nameCommand_=currentByte_;
+                    logOut("read byte:" + to_string((int)currentByte_));
+                    if(count >9){
+                        tempPld = tempPld + currentByte_;
+                        if (count == 11){
+                            tempPld = tempPld << 8;
+                        }else{
+                            pack_.payload = currentByte_;
+                        }
+                    }
+                    else if (count>8){
+                        pack_.nameCommand_ = currentByte_;
                     }
                     else if (count>7){
-                        pack_.status_=currentByte_;
+                        pack_.status_= currentByte_;
                         if(pack_.status_!=1){
                             return {0,0,pack_.status_,{0,0,0,0,0,0,0,0,0,0}};
                         }
@@ -915,29 +986,55 @@ Conserial::UartResponse Conserial::ParsePackege(unsigned int timeout){
             }
         }
         else{
-            cout<< " Ответа нет или он некорректный"<<endl;
+            logOut("Read_com packet search failed");
             return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
         }
         if( successReceipt_ == true){
             break;
         }
+        if (clock()>=end_time){
+            std::string stream("Started at ");
+            logOut("Read_com timeouted at" + currentDateTime());
+        }
+    }
+    // Формирование массива для подсчета CRC
+    int crc = 65535;
+    uint8_t temp_[256] = { pack_.nameCommand_,pack_.status_};
+    if (versionProtocol.version == 1 && versionProtocol.subversion == 5){
+        temp_[0] = uint8_t(pack_.payload>>8);
+        temp_[1] = uint8_t(pack_.payload);
+        temp_[2] = pack_.nameCommand_;
+        temp_[3] = pack_.status_;
+
+        int j = 1;
+        for (int i = 4; i <= pack_.payload+2; i= i+2){
+            temp_[i] = params[j]>>8;
+            temp_[i+1] = params[j];
+            j++;
+        };
+
+        crc = Crc8((uint8_t*)&temp_, pack_.payload+3);
+
+    }else{
+        int j = 1;
+        for (int i = 2; i <= 2*params[0]; i= i+2){
+            temp_[i] = params[j]>>8;
+            temp_[i+1] = params[j];
+            j++;
+        };
+
+        crc = Crc8((uint8_t*)&temp_, 2*(uint8_t)params[0]+2);
     }
 
-    // Формирование массива для подсчета CRC
-    uint8_t temp_[64] = {pack_.nameCommand_,pack_.status_};
-    int j = 1;
-    for (int i = 2; i <= 2*params[0]; i= i+2){
-        temp_[i] = params[j]>>8;
-        temp_[i+1] = params[j];
-        j++;
-    };
-
-    int crc = Crc8((uint8_t*)&temp_, 2*(uint8_t)params[0]+2);
     //Подсчет CRC
     if(crc!=0){
         cout<< "WrongCheckSum"<<"\t" << crc <<endl;
+        logOut("WrongCheckSum \t" + to_string((int)crc));
+        logOutUart(pack_);
         return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
     }
+
+
     //Формирование параметров
     for(int i=0; i<(int)params.size()-1; i++){
         if(i+1 != params[0])
@@ -947,6 +1044,8 @@ Conserial::UartResponse Conserial::ParsePackege(unsigned int timeout){
             break;
         }
     }
+    logOut("Read_com final packet");
+    logOutUart(pack_);
     return pack_ ;
 }
 
@@ -954,28 +1053,31 @@ Conserial::UartResponse Conserial::ParsePackege_1_0(unsigned int timeout){
     bool startPackFlag_=false;
     bool successReceipt_=false;
     bool flag_ = 0;
-    bool a = 0;
+    bool success = 0;
     array <uint16_t, 201>  params  = {0};
     Conserial::UartResponse pack_= {0,0,0,{0}};
     uint8_t currentByte_=0;
     timeout = timeout * 1000;
 
-
+    logOut("Read_com started with timeout = " + std::to_string(timeout) + " s from port " + com_.GetPort());
     if (!com_.IsOpened())
     {
         return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
     }
+
+    logOut("Read_com started to find packet at" + currentDateTime());
     clock_t end_time = clock() + timeout * (CLOCKS_PER_SEC/1000) ;
     while (clock()<end_time) {
         while (startPackFlag_ != true && clock()<end_time) {
-            currentByte_ = com_.ReadChar(a);
-            if(a){
-                if (currentByte_ == 255){
+            currentByte_ = com_.ReadChar(success);
+            logOut("read byte:" + to_string((int)currentByte_));
+            if(success){
+                if (currentByte_ == 0xFF){
                     flag_ = 1;
                 }
                 else{
                     if (flag_ == 1){
-                        if (currentByte_ != 254)
+                        if (currentByte_ != 0xFE)
                         {
                             flag_ = 0;
                         }
@@ -996,8 +1098,8 @@ Conserial::UartResponse Conserial::ParsePackege_1_0(unsigned int timeout){
             int paramCnt =1;
             unsigned short p=0;
             while (p != 65535 && clock()<end_time) {
-                currentByte_ = com_.ReadChar(a);
-                if(a){
+                currentByte_ = com_.ReadChar(success);
+                if(success){
                     if (count>9){
                         pack_.status_=currentByte_;
                     }
@@ -1031,11 +1133,15 @@ Conserial::UartResponse Conserial::ParsePackege_1_0(unsigned int timeout){
             }
         }
         else{
-            cout<< " Ответа нет или он некорректный"<<endl;
+            logOut("Read_com packet search failed");
             return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
         }
         if( successReceipt_ == true){
             break;
+        }
+        if (clock()>=end_time){
+            std::string stream("Started at ");
+            logOut("Read_com timeouted at" + currentDateTime());
         }
     }
 
@@ -1054,9 +1160,12 @@ Conserial::UartResponse Conserial::ParsePackege_1_0(unsigned int timeout){
 
     if(!(crc == pack_.crc_)){
         cout<< "WrongCheckSum"<<"\t" << (int)crc << (int) pack_.crc_<<endl;
+        logOut("WrongCheckSum \t" + to_string((int)crc));
+        logOutUart(pack_);
         return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
     }
-
+    logOut("Read_com final packet");
+    logOutUart(pack_);
     return pack_ ;
 }
 
@@ -1071,7 +1180,6 @@ uint8_t Conserial::Crc8(uint8_t *pcBlock, uint8_t len)
 }
 
 uint16_t Conserial::CalcStep(angle_t angle, angle_t rotateStep){
-
     if (angle < 0){
         angle = angle + 360;
     }
@@ -1114,44 +1222,80 @@ bool Conserial::StandIsConected (){
 
 uint8_t Conserial::CheckStatus(uint8_t status){
     uint8_t errorCode = 3;
-    switch (status) {
-    case 1:
+
+    if (status == 1){
         errorCode = 0;
-        break;//Успех
-    case 2:
-        cout<<"Количество принятых параметров превышает допустимый предел"<<endl;
-        errorCode = 3;
-        break;
-    case 4:
-        cout<<"Необнаружена метка конца пакета"<<endl;
-        errorCode = 3;
-        break;
-    case 8:
-        cout<<"Неизвестный ID  Команды"<<endl;
-        errorCode = 3;
-        break;
-    case 16:
-        cout<<"Несоответствие CRC"<<endl;
-        errorCode = 3;
-        break;
-    case 17:
-        errorCode = 1; //Проблема с подключением
-        break;
-    case 18:
-        errorCode = 2; //Переданы неверные параметры на вход функции
-        break;
-    case 32:
-        cout<<"Не удалось выполнить команду"<<endl;
-        errorCode = 3;
-        break;
-    case 64:
-        cout<<"Аппаратная платформа в аварийном состоянии"<<endl;
-        errorCode = 3;
-        break;
-    default: errorCode = 3; //Битый пакет (Не известно)
+    }else
+    {
+        if ( (status ^ 2) == 0 ){
+            cout<<"Количество принятых параметров превышает допустимый предел"<<endl;
+            errorCode = 3;
+        }
+
+        if ( (status ^ 4) == 0 ){
+            cout<<"Необнаружена метка конца пакета"<<endl;
+            errorCode = 3;
+        }
+
+        if ( (status ^ 16) == 0 ){
+            cout<<"Несоответствие CRC"<<endl;
+            errorCode = 3;
+        }
+
+        if ( (status ^ 17) == 0 ){
+            errorCode = 1; //Проблема с подключением
+        }
+
+        if ( (status ^ 18) == 0 ){
+            errorCode = 2; //Переданы неверные параметры на вход библиотечной функции
+        }
+        if ( (status ^ 32) == 0 ){
+            cout<<"Не удалось выполнить команду"<<endl;
+            errorCode = 3;
+        }
+
+        if ( (status ^ 64) == 0 ){
+            cout<<"Аппаратная платформа в аварийном состоянии"<<endl;
+            errorCode = 3;
+        }
     }
 
     return errorCode;
+}
+
+
+void Conserial::logOut(std::string str)
+{
+#ifndef NO_SERIAL_LOG
+    if (!out_.is_open())
+    {
+        out_.open("ceserial.log");
+    }
+    if (out_.is_open())
+        out_ << str << std::endl;
+#endif
+}
+
+const std::string Conserial::currentDateTime() {
+    time_t     now = time(0);
+    struct tm  tstruct;
+    char       buf[80];
+    tstruct = *localtime(&now);
+    // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
+    // for more information about date/time format
+    strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
+
+    return buf;
+}
+
+void Conserial::logOutUart(const UartResponse &pack)
+{
+    logOut("Whole packet info:");
+    logOut("Pack.status = " + std::to_string(pack.status_));
+    logOut("Pack.nameCommand = " + std::to_string(pack.nameCommand_));
+    logOut("Pack.crc = " + std::to_string(pack.crc_));
+    for(int i = 0; i < 10; ++i)
+        logOut("Pack.parameters[" + std::to_string(i) + "] = " + std::to_string(pack.parameters_[i]));
 }
 
 
