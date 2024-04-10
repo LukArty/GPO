@@ -605,7 +605,7 @@ Conserial::UartResponse Conserial::Twiting (char commandName, int N,... ){
     // Проверка соединения
     if (!StandIsConected())
     {
-        pack.status_= 17;
+        pack.status_= 1;
         return pack;
     }
 
