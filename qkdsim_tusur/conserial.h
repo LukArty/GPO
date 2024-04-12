@@ -26,21 +26,22 @@
 using namespace std;
 namespace hwe
 {
-struct versionFirmwareResponse{
-    uint16_t major_ = 0;
-    uint16_t minor_ = 0;
-    uint16_t micro_ = 0;
-    adc_t errorCode_ = 0;
-};
-struct versionProtocolResponse{
-    uint16_t version_ = 0;
-    uint16_t subversion_ = 0;
-    adc_t errorCode_ = 0;
-};
+
 /// @brief Интерфейс для взаимодействия с аппаратной платформой.
 class Conserial : public AbstractHardwareApi
 {
 public:
+    struct versionFirmwareResponse{
+        uint16_t major_ = 0;
+        uint16_t minor_ = 0;
+        uint16_t micro_ = 0;
+        adc_t errorCode_ = 0;
+    };
+    struct versionProtocolResponse{
+        uint16_t version_ = 0;
+        uint16_t subversion_ = 0;
+        adc_t errorCode_ = 0;
+    };
 
     Conserial();
     virtual ~Conserial();
@@ -233,12 +234,12 @@ public:
     @brief Функция получения текущей версии протокола общения
     @return {X,Y,Z}
     */
-    hwe::versionProtocolResponse GetProtocolVersion ();
+    hwe::Conserial::versionProtocolResponse GetProtocolVersion ();
     /*!
     @brief Функция получения текущей версии прошивки АП
     @return {X,Y,Z}
     */
-    hwe::versionFirmwareResponse GetCurrentFirmwareVersion();
+    hwe::Conserial::versionFirmwareResponse GetCurrentFirmwareVersion();
     /*!
     @brief Функция получения максимального количества передаваемых байтов
     @return Количество байт
@@ -250,6 +251,9 @@ public:
     void SetComPortName(const char* port);
 
 private:
+    enum class VersionProtocol {unknown, protocol_1_0 = 2, protocol_1_2 = 3, protocol_1_5 = 4 };
+    VersionProtocol version_protocol {VersionProtocol::protocol_1_5};
+
     /// @brief Структура версии прошивки АП
     struct versionFirmware{
         uint16_t major = 0;
@@ -295,6 +299,8 @@ private:
     ce::ceSerial com_; // Обект класса для соединения с МК
     /// @brief Подсчет CRC
     uint8_t Crc8(uint8_t *pcBlock, uint8_t len);
+    int ReadPacket(uint8_t *readBytes, int N);
+    UartResponse ParsePacket();
     /// @brief Парсинг пакетов версии 1.2 и 1.5
     UartResponse ParsePackege(unsigned int timeout);
     /// @brief Парсинг пакетов версии 1.0
@@ -322,13 +328,19 @@ private:
     /// @param [in] commandName - ID команды
     /// @param [in] bytes - Массив передаваемых байтов
     /// @param [in] N - Количество передаваемых байтов
-    /// @return Распаршеный пакет
+    /// @return 1
     uint16_t SendUart (char commandName, uint8_t * bytes, uint16_t N );
+
+    uint16_t SendPacket (char commandName, uint8_t * bytes, uint16_t N );
     /// @brief Парсинг кодов ошибок с АП
     /// @return Статус
     uint8_t CheckStatus(uint8_t status);
     /// @brief Проверка подключения к АП
     bool StandIsConected ();
+
+    void FindProtocolVersion();
+
+    void ParamToBytes(uint8_t * bytes, int quantityP, ...);
 
 
     //Loging
