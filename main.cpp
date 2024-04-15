@@ -110,14 +110,14 @@ void Scan (int platesID, int power){
 
 int main()
 {
-DebugLogger::StartLogging("./log.log");
+//DebugLogger::StartLogging("./log.log");
  //example.InitByPD();
 //TestSpeedMessage();
-//    example.SetLaserState(1);
+    example.SetLaserState(1);
 //    example.GetLaserState();
 //    example.SetLaserPower(70);
     //example.Upload(" ");
-DebugLogger::EndLogging();
+//DebugLogger::EndLogging();
     return 0;
 }
 
