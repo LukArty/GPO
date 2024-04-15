@@ -340,7 +340,7 @@ private:
 
     void FindProtocolVersion();
 
-    void ParamToBytes(uint8_t * bytes, int quantityP, ...);
+    void ParamToBytes(uint8_t * bytes, int &quantityP, ...);
 
 
     //Loging
