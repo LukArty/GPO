@@ -87,7 +87,7 @@ api::InitResponse Conserial::InitByPD()
     standOptions.timeoutTime_ = tempTimeOut_;
 
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("Init")->second, bytes, N);
@@ -123,7 +123,7 @@ api::InitResponse Conserial::InitByButtons(WAngles<angle_t> angles)
     WAngles<adc_t> steps = CalcSteps(angles);
 
 
-    uint8_t N = 4;
+    int N = 4;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
     UartResponse pack = Twiting(dict_.find("InitByButtons")->second, bytes, N);
@@ -156,7 +156,7 @@ api::AdcResponse Conserial::RunTest()
 
     api::AdcResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("RunSelfTest")->second, bytes, N);
@@ -174,7 +174,7 @@ api::SendMessageResponse Conserial::Sendmessage(WAngles<angle_t> angles, adc_t p
 
     WAngles<adc_t> steps = CalcSteps(angles);
 
-    uint8_t N = 5;
+    int N = 5;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_, power);
     UartResponse pack = Twiting(dict_.find("SendMessage")->second, bytes, N);
@@ -215,7 +215,7 @@ api::AdcResponse Conserial::SetTimeout(adc_t timeout)
     }
     else if (timeout >= 900){timeout = 900;}
 
-    uint8_t N = 1;
+    int N = 1;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, timeout);
     UartResponse pack = Twiting(dict_.find("SetTimeout")->second, bytes, N);
@@ -239,7 +239,7 @@ api::AdcResponse Conserial::SetLaserState(adc_t on)
         return response;
     }
 
-    uint8_t N = 1;
+    int N = 1;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, on);
     UartResponse pack = Twiting(dict_.find("SetLaserState")->second, bytes, N);
@@ -260,7 +260,7 @@ api::AdcResponse Conserial::SetLaserPower(adc_t power)
         return response;
     }
 
-    uint8_t N = 1;
+    int N = 1;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, power);
     UartResponse pack = Twiting(dict_.find("SetLaserPower")->second, bytes, N);
@@ -279,7 +279,7 @@ api::WAnglesResponse Conserial::SetPlatesAngles(WAngles<angle_t> angles)
 
     WAngles<adc_t> steps = CalcSteps(angles);
 
-    uint8_t N = 4;
+    int N = 4;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
     UartResponse pack = Twiting(dict_.find("SetPlatesAngles")->second, bytes, N);
@@ -305,7 +305,7 @@ api::WAnglesResponse Conserial::UpdateBaseAngle(WAngles<angle_t> angles)
 
     WAngles<adc_t> steps = CalcSteps(angles);
 
-    uint8_t N = 4;
+    int N = 4;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
     UartResponse pack = Twiting(dict_.find("UpdateBaseAngles")->second, bytes, N);
@@ -323,7 +323,7 @@ api::WAnglesResponse Conserial::ReadBaseAngles()
 {
     api::WAnglesResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("ReadBaseAngles")->second, bytes, N);
@@ -346,7 +346,7 @@ api::AdcResponse Conserial::ReadEEPROM(uint8_t numberUnit_)
         return response;
     }
 
-    uint8_t N = 1;
+    int N = 1;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, numberUnit_);
     UartResponse pack = Twiting(dict_.find("ReadEEPROM")->second, bytes, N);
@@ -367,7 +367,7 @@ api::AdcResponse Conserial::WriteEEPROM(uint8_t numberUnit_, uint16_t param_)
         return response;
     }
 
-    uint8_t N = 2;
+    int N = 2;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N, numberUnit_, param_);
     UartResponse pack = Twiting(dict_.find("WriteEEPROM")->second, bytes, N);
@@ -383,7 +383,7 @@ api::AdcResponse Conserial::GetLaserState()
 {
     api::AdcResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetLaserState")->second, bytes, N);
@@ -400,7 +400,7 @@ api::AdcResponse Conserial::GetLaserPower()
 {
     api::AdcResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetLaserPower")->second, bytes, N);
@@ -418,7 +418,7 @@ api::WAnglesResponse Conserial::GetPlatesAngles()
 {
     api::WAnglesResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetCurPlatesAngles")->second, bytes, N);
@@ -439,7 +439,7 @@ api::SLevelsResponse Conserial::GetSignalLevels()
 {
     api::SLevelsResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetSignalLevel")->second, bytes, N);
@@ -457,7 +457,7 @@ api::AngleResponse Conserial::GetRotateStep()
 {
     api::AngleResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetRotateStep")->second, bytes, N);
@@ -476,7 +476,7 @@ api::SLevelsResponse Conserial::GetLightNoises()
 {
     api::SLevelsResponse response; // Структура для формирования ответа
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetLightNoises")->second, bytes, N);
@@ -493,7 +493,7 @@ api::SLevelsResponse Conserial::GetLightNoises()
 api::AdcResponse Conserial::GetHardwareState(){
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetHardwareState")->second, bytes, N);
@@ -508,7 +508,7 @@ api::AdcResponse Conserial::GetErrorCode()
 {
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetErrorCode")->second, bytes, N);
@@ -523,7 +523,7 @@ api::AdcResponse Conserial::GetTimeout()
 {
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetTimeout")->second, bytes, N);
@@ -542,7 +542,7 @@ api::InitResponse Conserial::GetInitParams(){
     response.errorCode_ = 0;
 
 
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetInitParams")->second, bytes, N);
@@ -749,7 +749,7 @@ uint16_t Conserial::GetCurrentMode()
 
 uint16_t Conserial::GetMaxPayloadSize()
 {
-    uint8_t N = 0;
+    int N = 0;
     uint8_t *bytes = {new uint8_t[N]};
     ParamToBytes(bytes, N);
     UartResponse pack = Twiting(dict_.find("GetMaxPayloadSize")->second, bytes, N);
@@ -784,12 +784,15 @@ hwe::Conserial::versionFirmwareResponse Conserial::GetCurrentFirmwareVersion(){
     UartResponse pack;
     switch (version_protocol) {
     case VersionProtocol::protocol_1_5:{
-        // pack = Twiting(dict_.find("GetCurrentFirmwareVersion")->second, 0);
-        // response.major_ = pack.parameters_[0];
-        // response.minor_ = pack.parameters_[1];
-        // response.micro_ = pack.parameters_[2];
-        // response.errorCode_ = pack.status_;
-        // versionFirmware  = {response.major_,response.minor_,response.micro_};
+        int N = 0;
+        uint8_t *bytes = {new uint8_t[N]};
+        ParamToBytes(bytes, N);
+        UartResponse pack = Twiting(dict_.find("GetCurrentFirmwareVersion")->second, bytes, N);
+         response.major_ = pack.parameters_[0];
+         response.minor_ = pack.parameters_[1];
+         response.micro_ = pack.parameters_[2];
+         response.errorCode_ = pack.status_;
+         versionFirmware  = {response.major_,response.minor_,response.micro_};
         response = {versionFirmware.major,versionFirmware.minor,versionFirmware.micro};
         break;
     }
@@ -800,7 +803,7 @@ hwe::Conserial::versionFirmwareResponse Conserial::GetCurrentFirmwareVersion(){
     return response;
 };
 
-void ParamToBytes(uint8_t * bytes,  int quantityP, ...){
+void Conserial::ParamToBytes(uint8_t * bytes,  int &quantityP, ...){
     va_list temp_params;
     va_start(temp_params,quantityP);
     uint16_t * params =new uint16_t [quantityP];
@@ -811,7 +814,8 @@ void ParamToBytes(uint8_t * bytes,  int quantityP, ...){
     va_end(temp_params);
 
     int j = 0 ;
-    for (int i = 0; i < 2 * quantityP; i= i+2){
+    quantityP *=  2;
+    for (int i = 0; i < quantityP; i= i+2){
         bytes[i] = (params[j]>>8);
         bytes[i+1] = params[j];
         j++;
@@ -841,7 +845,7 @@ Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, u
         int count = 0;
         while (count < 3 && pack.status_ != 1) {
             //Посылаем запрос МК
-            SendUart(commandName, bytes, length);
+            SendPacket(commandName, bytes, length);
 
             pack = ParsePacket();
             ++count;
@@ -854,11 +858,11 @@ Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, u
 
 uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
 
-    const int maxBytesWithoutParam = 9; // st0 + st1 + pld0 + pld1 + cN + solt + crc + end0 + end1
+    //const int maxBytesWithoutParam = 9; // st0 + st1 + pld0 + pld1 + cN + solt + crc + end0 + end1
     uint8_t crc = 0;
 
     uint8_t temp_[128] = {uint8_t(commandName)};
-    uint8_t* packingMessage {new uint8_t [N + maxBytesWithoutParam + 1]};
+    uint8_t packingMessage [64] {};
     int n = 0;
     /*Packing pack*/
     switch (version_protocol) {
@@ -939,15 +943,15 @@ uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
         com_.Write(packingMessage[i]);
         logOut("send byte:" + to_string(packingMessage[i]));
     }
-    delete [] packingMessage;
+    //delete [] packingMessage;
     return 1;
 };
 
 int Conserial::ReadPacket(uint8_t *readBytes, int N ){
 
-    bool success = 0, end_read = 0, start_read;
+    bool success = 0, end_read = 0, start_read = 0;
     int readed  = 0;
-    clock_t end_time = clock() + standOptions.timeoutTime_ * (CLOCKS_PER_SEC) ;
+    clock_t end_time = clock() + standOptions.timeoutTime_* 1000 * (CLOCKS_PER_SEC/1000) ;
     uint8_t byte = 0;
     uint16_t temp_2b = 0;
 
@@ -956,9 +960,10 @@ int Conserial::ReadPacket(uint8_t *readBytes, int N ){
         break;
     default:
         logOut("Read_com started to find packet at " + currentDateTime());
-        while (clock()<end_time && !end_read){
+        while (clock()< end_time && !end_read){
             byte = com_.ReadChar(success);
             if (success){
+                logOut("read byte:" + to_string(byte));
                 if (start_read){ // Reading all bytes from package with end bytes;
                     readBytes[readed++] = byte;
                 }
@@ -966,11 +971,11 @@ int Conserial::ReadPacket(uint8_t *readBytes, int N ){
                 if (temp_2b == 0xFFFE && !start_read){ // Starting read
                     logOut("Started read packet (marker successfull)");
                     start_read = true;
-                }else if (start_read && !(temp_2b == 0xFFFF)){ // Ending read
+                }else if (start_read && temp_2b == 0xFFFF){ // Ending read
                     logOut("Ended read packet (marker successfull)");
                     end_read = 1;
                 }
-                if (clock()<end_time){ //timeouted
+                if (clock()>end_time){ //timeouted
                     logOut("Read timeouted at " + currentDateTime());
                     end_read = 1;
                     readed = 0;
@@ -994,11 +999,11 @@ Conserial::UartResponse Conserial::ParsePacket(){
     {
         return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
     }
-    uint8_t *buffer {new uint8_t [200]}; // Array readed
+    uint8_t buffer[200]{}; // Array readed
 
-    int readedBytes = ReadPacket(buffer, 200) - 2; // Reading
-    buffer[readedBytes + 1] = 0; //Clean first end byte
-    buffer[readedBytes + 2] = 0; //Clean second end byte
+    int readedBytes = ReadPacket(buffer, 200) ; // Reading
+    buffer[--readedBytes] = 0; //Clean first end byte
+    buffer[--readedBytes] = 0; //Clean second end byte
 
     /*Parsing*/
 
@@ -1012,7 +1017,7 @@ Conserial::UartResponse Conserial::ParsePacket(){
             pack_.crc_ = buffer[readedBytes-1];
 
             int j = 4;
-            for (int i = 0; i < 10 && readedBytes - j > 1 && readedBytes - j < readedBytes - 2; ++i) {
+            for (int i = 0; i < 10 && j < readedBytes - 2 ; ++i) {
                 pack_.parameters_[i]=(uint16_t) buffer[j] << 8 | (uint16_t) buffer[j+1];
                 j+=2;
             }
@@ -1080,7 +1085,6 @@ Conserial::UartResponse Conserial::ParsePacket(){
     logOut("Coverted  final packet");
     logOutUart(pack_);
 
-    delete [] buffer;
     return pack_;
 }
 
@@ -1181,7 +1185,7 @@ uint8_t Conserial::CheckStatus(uint8_t status){
 void Conserial::FindProtocolVersion(){
     int notFound = 1;
 
-    while(notFound !=0){
+    while(notFound !=0 && !(version_protocol == VersionProtocol::unknown)){
         notFound = GetLaserState().errorCode_;
         if(notFound !=0){
             switch (version_protocol) {
