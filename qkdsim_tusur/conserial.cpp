@@ -508,7 +508,7 @@ api::InitResponse Conserial::GetInitParams(){
     response.maxSignalLevels_.h_ = pack.parameters_[6]; // <- максимальный уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
     response.maxSignalLevels_.v_ = pack.parameters_[7]; // <- максимальный уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
 
-    response.maxLaserPower_ = pack.parameters_[9];
+    response.maxLaserPower_ = pack.parameters_[8];
     response.errorCode_ = pack.status_;
 
     standOptions.startPlatesAngles_ = response.startPlatesAngles_; // Сохраняем текущее значение углов на будущее
