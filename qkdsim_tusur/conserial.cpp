@@ -849,7 +849,7 @@ hwe::Conserial::versionFirmwareResponse Conserial::GetCurrentFirmwareVersion(){
         break;
     }
     return response;
-};
+}
 
 void Conserial::FirmwareUpdate (string path){
     logOut(__FUNCTION__);
@@ -857,7 +857,7 @@ void Conserial::FirmwareUpdate (string path){
     const char * mainCommand= command.c_str();
     if(system(mainCommand)){
         FindProtocolVersion();
-    };
+    }
     logOut("\n");
 }
 
@@ -939,10 +939,10 @@ void Conserial::ParamToBytes(uint8_t * bytes,  int &quantityP, ...){
         bytes[i] = (params[j]>>8);
         bytes[i+1] = params[j];
         j++;
-    };
+    }
 
     delete [] params;
-};
+}
 
 uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
 
@@ -960,7 +960,7 @@ uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
         temp_[2] = commandName;
         for (int i = 3; i <=  N+2; i++){
             temp_[i] = bytes[i-3];
-        };
+        }
         crc = Crc8((uint8_t *) &temp_, N+4);//bytes +pld0+pld1+ cN +solt
 
         packingMessage[0] = 0xFF; //st0
@@ -981,7 +981,7 @@ uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
     case VersionProtocol::protocol_1_2:{
         for (int i = 1; i <=  N; i++){
             temp_[i] = bytes[i-1];
-        };
+        }
         crc = Crc8((uint8_t *) &temp_, N+2);//bytes + cN +solt
 
         packingMessage[0] = 0xFF; //st0
@@ -1001,7 +1001,7 @@ uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
     case VersionProtocol::protocol_1_0:{
         for (int i = 1; i <=  N; i++){
             temp_[i] = bytes[i-1];
-        };
+        }
         crc = Crc8((uint8_t *) &temp_, N+2);//bytes + cN +solt
 
         packingMessage[0] = 0xFF; //st0
@@ -1034,7 +1034,7 @@ uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
     }
     //delete [] packingMessage;
     return 1;
-};
+}
 
 int Conserial::ReadPacket(uint8_t *readBytes, int N ){
 
