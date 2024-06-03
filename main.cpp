@@ -8,37 +8,37 @@ hwe::Conserial example;
 void TestSpeedMessage(){
     api::SLevelsResponse response;
 
-   example.SetLaserState(1);
-   usleep(50000);
-   response = example.GetSignalLevels();
-   cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
-   example.SetLaserState(0);
-   int count =0;
-   while(count <20) {
-   response = example.GetSignalLevels();
-   cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
-   usleep(15000);
-   count++;
-   }
+    example.SetLaserState(1);
+    usleep(50000);
+    response = example.GetSignalLevels();
+    cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
+    example.SetLaserState(0);
+    int count =0;
+    while(count <20) {
+        response = example.GetSignalLevels();
+        cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
+        usleep(15000);
+        count++;
+    }
 
-   cout<< "Привет"<<endl;
-   example.SetLaserState(0);
-   usleep(50000);
-   response = example.GetSignalLevels();
-   cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
-   example.SetLaserState(1);
+    cout<< "Привет"<<endl;
+    example.SetLaserState(0);
+    usleep(50000);
+    response = example.GetSignalLevels();
+    cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
+    example.SetLaserState(1);
 
-   count =0;
-   while(count <6) {
-   response = example.GetSignalLevels();
-   cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
-   usleep(50000);
-   count++;
-   }
+    count =0;
+    while(count <6) {
+        response = example.GetSignalLevels();
+        cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
+        usleep(50000);
+        count++;
+    }
 
-   usleep(300000);
-   response = example.GetSignalLevels();
-   cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
+    usleep(300000);
+    response = example.GetSignalLevels();
+    cout << response.signal_.h_ << " "<<response.signal_.v_ <<endl;
 };
 
 void RunAllFunction(){
@@ -98,11 +98,11 @@ void Scan (int platesID, int power){
     float i = 0;
     while (i < 181) {
         switch (platesID) {
-        case 1: example.Sendmessage({i,0,0,0}, power);break;
-        case 2: example.Sendmessage({0,i,0,0}, power);break;
-        case 3: example.Sendmessage({0,0,i,0}, power);break;
-        case 4: example.Sendmessage({0,0,0,i}, power);break;
-        default:  break;
+            case 1: example.Sendmessage({i,0,0,0}, power);break;
+            case 2: example.Sendmessage({0,i,0,0}, power);break;
+            case 3: example.Sendmessage({0,0,i,0}, power);break;
+            case 4: example.Sendmessage({0,0,0,i}, power);break;
+            default:  break;
         }
         i= i+0.3;
     }
@@ -110,14 +110,20 @@ void Scan (int platesID, int power){
 
 int main()
 {
-DebugLogger::StartLogging("./log.log");
- //example.InitByPD();
-//TestSpeedMessage();
-//    example.SetLaserState(1);
+
+    //example.InitByPD();
+    //TestSpeedMessage();
+    //example.SetLaserState(1);
+    cout << example.GetProtocolVersion().version_ << example.GetProtocolVersion().subversion_ << endl;
+    cout << example.SetLaserState(1).adcResponse_<< endl;
+    cout << example.GetLaserState().adcResponse_<< endl;
+
+    cout << example.GetLaserPower().adcResponse_<< endl;
+    cout << example.InitByPD().errorCode_ << endl;
 //    example.GetLaserState();
-//    example.SetLaserPower(70);
+    //  example.SetLaserPower(70);
     //example.Upload(" ");
-DebugLogger::EndLogging();
+
     return 0;
 }
 
