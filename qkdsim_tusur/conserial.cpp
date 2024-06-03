@@ -724,7 +724,7 @@ api::AdcResponse Conserial::CreateConfigSecret(string passwd){
 
 
 
-    int str_length = size(passwd);
+    int str_length = sizeof(passwd);
     if(str_length>20)
     {
         response.errorCode_ = 5; // Принят некорректный входной параметр
@@ -733,7 +733,7 @@ api::AdcResponse Conserial::CreateConfigSecret(string passwd){
     //Старшие байты добиваются нулями в случае короткого пароля
     while (str_length<20 ){
         passwd=(char) 0x00 + passwd;
-        str_length = size(passwd);
+        str_length = sizeof(passwd);
     }
 
 
@@ -753,7 +753,7 @@ api::AdcResponse Conserial::OpenConfigMode(string passwd){
     logOut(__FUNCTION__);
     api::AdcResponse response;
 
-    int str_length = size(passwd);
+    int str_length = sizeof(passwd);
     if(str_length>20)
     {
         response.errorCode_ = 5; // Принят некорректный входной параметр
@@ -761,7 +761,7 @@ api::AdcResponse Conserial::OpenConfigMode(string passwd){
     }
     while (str_length<20 ){
         passwd=(char) 0x00 + passwd;
-        str_length = size(passwd);
+        str_length = sizeof(passwd);
     }
 
     UartResponse pack;
