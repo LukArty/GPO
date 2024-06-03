@@ -66,7 +66,7 @@ api:: InitResponse Conserial:: Init()
         string angle4_ = temp_;
 
         if (angle1_.length() > 4 && angle2_.length() > 4 && angle3_.length() > 4 && angle4_.length() > 4){ //Если в файл записаны углы
-            WAngles<angle_t> anglesIni_;
+            WAngles <angle_t> anglesIni_{};
             anglesIni_.aHalf_= stof (angle1_) ;
             anglesIni_.aQuart_= stof (angle2_);
             anglesIni_.bHalf_= stof (angle3_);
@@ -529,7 +529,7 @@ api::AdcResponse Conserial::GetHardwareState(){
     response.errorCode_ = pack.status_;
 
     return response;
-};
+}
 
 api::AdcResponse Conserial::GetErrorCode()
 {
@@ -600,7 +600,7 @@ api::InitResponse Conserial::GetInitParams(){
 
     return response; // Возвращаем сформированный ответ
 
-};
+}
 
 api::SLevelsResponse Conserial::GetStartLightNoises()
 {
@@ -619,7 +619,7 @@ api::AngleResponse Conserial::SetPlateAngle(adc_t plateNumber, angle_t angle)
     logOut("Параметры: " + to_string(angle));
     api::AngleResponse response; // Структура для формирования ответа
     api::WAnglesResponse tempResponse;
-    WAngles<angle_t> angles;
+    WAngles <angle_t> angles {};
 
     if(plateNumber < 1 || plateNumber > 4)
     {
@@ -724,7 +724,7 @@ api::AdcResponse Conserial::CreateConfigSecret(string passwd){
 
 
 
-    int str_length = sizeof(passwd);
+    int str_length = passwd.size();
     if(str_length>20)
     {
         response.errorCode_ = 5; // Принят некорректный входной параметр
@@ -733,7 +733,7 @@ api::AdcResponse Conserial::CreateConfigSecret(string passwd){
     //Старшие байты добиваются нулями в случае короткого пароля
     while (str_length<20 ){
         passwd=(char) 0x00 + passwd;
-        str_length = sizeof(passwd);
+        str_length = passwd.size();
     }
 
 
@@ -753,7 +753,7 @@ api::AdcResponse Conserial::OpenConfigMode(string passwd){
     logOut(__FUNCTION__);
     api::AdcResponse response;
 
-    int str_length = sizeof(passwd);
+    int str_length = passwd.size();
     if(str_length>20)
     {
         response.errorCode_ = 5; // Принят некорректный входной параметр
@@ -761,7 +761,7 @@ api::AdcResponse Conserial::OpenConfigMode(string passwd){
     }
     while (str_length<20 ){
         passwd=(char) 0x00 + passwd;
-        str_length = sizeof(passwd);
+        str_length = passwd.size();
     }
 
     UartResponse pack;
