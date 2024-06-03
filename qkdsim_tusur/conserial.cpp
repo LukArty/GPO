@@ -12,9 +12,9 @@ namespace hwe
 Conserial::Conserial()
 {
 #ifdef CE_WINDOWS
-    com_.SetPort("COM4");
+    com_.SetPort("COM3");
 #else
-    com_.SetPort("/dev/ttyUSB1");
+    com_.SetPort("/dev/ttyStandQKD");
 #endif
     com_.SetBaudRate(115200);
     com_.SetDataSize(8);
@@ -24,6 +24,7 @@ Conserial::Conserial()
     com_.Close();
     com_.Open();
 
+    FindProtocolVersion();
 }
 
 std::string Conserial::GetComPortName()const
@@ -43,6 +44,7 @@ Conserial::~Conserial()
 
 api:: InitResponse Conserial:: Init()
 {
+    logOut(__FUNCTION__);
     api::InitResponse response; // Структура для формирования ответа
     std::fstream ini_("./Angles.ini");
     if (!ini_.is_open()) { response = InitByPD();  }
@@ -77,15 +79,18 @@ api:: InitResponse Conserial:: Init()
 
 api::InitResponse Conserial::InitByPD()
 {
-
+    logOut(__FUNCTION__);
     api::InitResponse response; // Структура для формирования ответа
     response.errorCode_ = 0;
     uint16_t tempTimeOut_ = 900;
     uint16_t tempData = standOptions.timeoutTime_;
     standOptions.timeoutTime_ = tempTimeOut_;
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("Init")->second, 0);
+
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("Init")->second, bytes, N);
 
     // Заполняем поля структуры
     response.startPlatesAngles_.aHalf_  = ((float) pack.parameters_[0]) * standOptions.rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
@@ -99,26 +104,33 @@ api::InitResponse Conserial::InitByPD()
     response.maxSignalLevels_.h_ = pack.parameters_[6]; // <- максимальный уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
     response.maxSignalLevels_.v_ = pack.parameters_[7]; // <- максимальный уровень сигнала на детекторе, принимающем вертикальную поляризацию, при включенном лазере
 
-    response.maxLaserPower_ = pack.parameters_[9];
+    response.maxLaserPower_ = pack.parameters_[8];
     response.errorCode_ = pack.status_;
-
+    if(version_protocol != VersionProtocol::protocol_1_0 && version_protocol != VersionProtocol::unknown){
     standOptions.startPlatesAngles_ = response.startPlatesAngles_; // Сохраняем текущее значение углов на будущее
     standOptions.curAngles_ = standOptions.startPlatesAngles_;
     standOptions.startLightNoises_ = response.startLightNoises_;
     standOptions.maxSignalLevels_ = response.maxSignalLevels_;
     standOptions.maxLaserPower_ = response.maxLaserPower_;
     standOptions.timeoutTime_ = tempData;
+    }
     return response; // Возвращаем сформированный ответ
 }
 
 api::InitResponse Conserial::InitByButtons(WAngles<angle_t> angles)
 {
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(angles.aHalf_)+ to_string(angles.aQuart_)
+           + to_string(angles.bHalf_)+ to_string(angles.bQuart_));
     api::InitResponse response; // Структура для формирования ответа
 
     WAngles<adc_t> steps = CalcSteps(angles);
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("InitByButtons")->second, 4, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+
+    int N = 4;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+    UartResponse pack = Twiting(dict_.find("InitByButtons")->second, bytes, N);
 
     // Заполняем поля структуры
     response.startPlatesAngles_.aHalf_  = ((float) pack.parameters_[0]) * standOptions.rotateStep_; //<- полуволновая пластина "Алисы"     (1я пластинка)
@@ -145,11 +157,14 @@ api::InitResponse Conserial::InitByButtons(WAngles<angle_t> angles)
 
 api::AdcResponse Conserial::RunTest()
 {
-
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("RunSelfTest")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("RunSelfTest")->second, bytes, N);
+
 
     response.adcResponse_ = pack.parameters_[0]; // Возвращаем целое число
     response.errorCode_ = pack.status_; // Команда отработала корректно
@@ -159,12 +174,17 @@ api::AdcResponse Conserial::RunTest()
 
 api::SendMessageResponse Conserial::Sendmessage(WAngles<angle_t> angles, adc_t power)
 {
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(angles.aHalf_)+ to_string(angles.aQuart_)
+           + to_string(angles.bHalf_)+ to_string(angles.bQuart_) + to_string(power));
     api::SendMessageResponse response; // Структура для формирования ответа
 
     WAngles<adc_t> steps = CalcSteps(angles);
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("SendMessage")->second, 5, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_, power);
+    int N = 5;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_, power);
+    UartResponse pack = Twiting(dict_.find("SendMessage")->second, bytes, N);
 
     // Заполняем поля
     response.newPlatesAngles_.aHalf_  = ((float)pack.parameters_[0]) * standOptions.rotateStep_; // <- полуволновая пластина "Алисы"     (1я пластинка)
@@ -189,7 +209,8 @@ api::SendMessageResponse Conserial::Sendmessage(WAngles<angle_t> angles, adc_t p
 
 api::AdcResponse Conserial::SetTimeout(adc_t timeout)
 {
-
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(timeout));
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
     if(standOptions.premissions!=1){
         response = {0,0};
@@ -202,8 +223,10 @@ api::AdcResponse Conserial::SetTimeout(adc_t timeout)
     }
     else if (timeout >= 900){timeout = 900;}
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("SetLaserState")->second,  1, timeout);
+    int N = 1;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, timeout);
+    UartResponse pack = Twiting(dict_.find("SetTimeout")->second, bytes, N);
 
     response.adcResponse_ = pack.parameters_[0];
     response.errorCode_ = pack.status_;
@@ -215,7 +238,8 @@ api::AdcResponse Conserial::SetTimeout(adc_t timeout)
 
 api::AdcResponse Conserial::SetLaserState(adc_t on)
 {
-
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(on));
     api::AdcResponse response; // Структура для формирования ответа
 
     if(on != 1 && on != 0)
@@ -224,8 +248,10 @@ api::AdcResponse Conserial::SetLaserState(adc_t on)
         return response;
     }
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("SetLaserState")->second,  1, on);
+    int N = 1;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, on);
+    UartResponse pack = Twiting(dict_.find("SetLaserState")->second, bytes, N);
 
     response.adcResponse_ = pack.parameters_[0];
     response.errorCode_ = pack.status_;
@@ -235,18 +261,23 @@ api::AdcResponse Conserial::SetLaserState(adc_t on)
 
 api::AdcResponse Conserial::SetLaserPower(adc_t power)
 {
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(power));
     api::AdcResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
     if (power > standOptions.maxLaserPower_)
     {
         response.errorCode_ = 2; // Принят некорректный входной параметр
         return response;
     }
 
-    pack = Twiting(dict_.find("SetLaserPower")->second,  1, power);
+    int N = 1;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, power);
+    UartResponse pack = Twiting(dict_.find("SetLaserPower")->second, bytes, N);
 
     response.adcResponse_ = pack.parameters_[0];
+
     response.errorCode_ = pack.status_;
 
     standOptions.laserPower_= response.adcResponse_;
@@ -255,12 +286,17 @@ api::AdcResponse Conserial::SetLaserPower(adc_t power)
 
 api::WAnglesResponse Conserial::SetPlatesAngles(WAngles<angle_t> angles)
 {
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(angles.aHalf_)+ to_string(angles.aQuart_)
+           + to_string(angles.bHalf_)+ to_string(angles.bQuart_));
     api::WAnglesResponse response; // Структура для формирования ответа
 
     WAngles<adc_t> steps = CalcSteps(angles);
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("SetPlatesAngles")->second,  4, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+    int N = 4;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+    UartResponse pack = Twiting(dict_.find("SetPlatesAngles")->second, bytes, N);
 
     steps = {pack.parameters_[0],pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
 
@@ -274,6 +310,9 @@ api::WAnglesResponse Conserial::SetPlatesAngles(WAngles<angle_t> angles)
 
 api::WAnglesResponse Conserial::UpdateBaseAngle(WAngles<angle_t> angles)
 {
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(angles.aHalf_)+ to_string(angles.aQuart_)
+           + to_string(angles.bHalf_)+ to_string(angles.bQuart_));
     api::WAnglesResponse response; // Структура для формирования ответа
 
     if(standOptions.premissions!=1){
@@ -283,8 +322,10 @@ api::WAnglesResponse Conserial::UpdateBaseAngle(WAngles<angle_t> angles)
 
     WAngles<adc_t> steps = CalcSteps(angles);
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("UpdateBaseAngles")->second,  4, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+    int N = 4;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, steps.aHalf_, steps.aQuart_, steps.bHalf_, steps.bQuart_);
+    UartResponse pack = Twiting(dict_.find("UpdateBaseAngles")->second, bytes, N);
 
     steps = {pack.parameters_[0],pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
 
@@ -297,10 +338,13 @@ api::WAnglesResponse Conserial::UpdateBaseAngle(WAngles<angle_t> angles)
 
 api::WAnglesResponse Conserial::ReadBaseAngles()
 {
+    logOut(__FUNCTION__);
     api::WAnglesResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("ReadBaseAngles")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("ReadBaseAngles")->second, bytes, N);
 
     WAngles<adc_t> steps = {pack.parameters_[0], pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
 
@@ -313,6 +357,7 @@ api::WAnglesResponse Conserial::ReadBaseAngles()
 
 api::AdcResponse Conserial::ReadEEPROM(uint8_t numberUnit_)
 {
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Структура для формирования ответа
 
     if(standOptions.premissions!=1){
@@ -320,8 +365,10 @@ api::AdcResponse Conserial::ReadEEPROM(uint8_t numberUnit_)
         return response;
     }
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("ReadEEPROM")->second, 1, numberUnit_);
+    int N = 1;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, numberUnit_);
+    UartResponse pack = Twiting(dict_.find("ReadEEPROM")->second, bytes, N);
 
     // Заполняем поля для ответа
     response.adcResponse_ = pack.parameters_[0];
@@ -332,6 +379,7 @@ api::AdcResponse Conserial::ReadEEPROM(uint8_t numberUnit_)
 
 api::AdcResponse Conserial::WriteEEPROM(uint8_t numberUnit_, uint16_t param_)
 {
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Структура для формирования ответа
 
     if(standOptions.premissions!=1){
@@ -339,8 +387,10 @@ api::AdcResponse Conserial::WriteEEPROM(uint8_t numberUnit_, uint16_t param_)
         return response;
     }
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("WriteEEPROM")->second, 2, numberUnit_, param_);
+    int N = 2;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N, numberUnit_, param_);
+    UartResponse pack = Twiting(dict_.find("WriteEEPROM")->second, bytes, N);
 
     // Заполняем поля для ответа
     response.adcResponse_ = pack.parameters_[0];
@@ -351,10 +401,13 @@ api::AdcResponse Conserial::WriteEEPROM(uint8_t numberUnit_, uint16_t param_)
 
 api::AdcResponse Conserial::GetLaserState()
 {
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetLaserState")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetLaserState")->second, bytes, N);
 
     // Заполняем поля для ответа
     response.adcResponse_ = pack.parameters_[0];
@@ -366,10 +419,14 @@ api::AdcResponse Conserial::GetLaserState()
 
 api::AdcResponse Conserial::GetLaserPower()
 {
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetLaserPower")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetLaserPower")->second, bytes, N);
+
 
     // Заполняем поля для ответа
     response.adcResponse_ = pack.parameters_[0];
@@ -381,10 +438,14 @@ api::AdcResponse Conserial::GetLaserPower()
 
 api::WAnglesResponse Conserial::GetPlatesAngles()
 {
+    logOut(__FUNCTION__);
     api::WAnglesResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetCurPlatesAngles")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetCurPlatesAngles")->second, bytes, N);
+
 
     // Получаем текущие углы поворота волновых пластин от МК
     WAngles<adc_t> steps = {pack.parameters_[0],pack.parameters_[1], pack.parameters_[2],pack.parameters_[3]};
@@ -399,10 +460,13 @@ api::WAnglesResponse Conserial::GetPlatesAngles()
 
 api::SLevelsResponse Conserial::GetSignalLevels()
 {
+    logOut(__FUNCTION__);
     api::SLevelsResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetSignalLevel")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetSignalLevel")->second, bytes, N);
 
     // Заполняем структуру для ответа
     response.signal_.h_ = pack.parameters_[0]; // <- уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
@@ -415,10 +479,13 @@ api::SLevelsResponse Conserial::GetSignalLevels()
 
 api::AngleResponse Conserial::GetRotateStep()
 {
+    logOut(__FUNCTION__);
     api::AngleResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetRotateStep")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetRotateStep")->second, bytes, N);
 
     // Получаем от МК количество шагов для поворота на 360 градусов
     uint16_t steps_ = pack.parameters_[0];
@@ -432,10 +499,13 @@ api::AngleResponse Conserial::GetRotateStep()
 
 api::SLevelsResponse Conserial::GetLightNoises()
 {
+    logOut(__FUNCTION__);
     api::SLevelsResponse response; // Структура для формирования ответа
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetLightNoises")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetLightNoises")->second, bytes, N);
 
     // Заполняем структуру для ответа
     response.signal_.h_ = pack.parameters_[0]; // <- уровень сигнала на детекторе, принимающем горизонтальную поляризацию, при включенном лазере
@@ -447,10 +517,13 @@ api::SLevelsResponse Conserial::GetLightNoises()
 }
 
 api::AdcResponse Conserial::GetHardwareState(){
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetHardwareState")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetHardwareState")->second, bytes, N);
 
     response.adcResponse_ = pack.parameters_[0];
     response.errorCode_ = pack.status_;
@@ -460,10 +533,13 @@ api::AdcResponse Conserial::GetHardwareState(){
 
 api::AdcResponse Conserial::GetErrorCode()
 {
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetErrorCode")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetErrorCode")->second, bytes, N);
 
     response.adcResponse_ = pack.parameters_[0];
     response.errorCode_ = pack.status_;
@@ -473,10 +549,13 @@ api::AdcResponse Conserial::GetErrorCode()
 
 api::AdcResponse Conserial::GetTimeout()
 {
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Поле типа adc_t c ответом и код ошибки команды
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetTimeout")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetTimeout")->second, bytes, N);
 
     response.adcResponse_ = pack.parameters_[0];
     response.errorCode_ = pack.status_;
@@ -488,12 +567,15 @@ api::AdcResponse Conserial::GetTimeout()
 
 api::InitResponse Conserial::GetInitParams(){
 
+    logOut(__FUNCTION__);
     api::InitResponse response; // Структура для формирования ответа
     response.errorCode_ = 0;
 
 
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetInitParams")->second, 0);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetInitParams")->second, bytes, N);
 
 
     // Заполняем поля структуры
@@ -522,21 +604,19 @@ api::InitResponse Conserial::GetInitParams(){
 
 api::SLevelsResponse Conserial::GetStartLightNoises()
 {
+    logOut(__FUNCTION__);
     api::SLevelsResponse response; // Структура для формирования ответа
 
-    // получаем от МК начальные уровни засветки
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetMaxLaserPower")->second, 0);
-
     // Заполняем структуру
-    response.signal_.h_ = pack.parameters_[0]; // <- начальная засветка детектора, принимающего горизонтальную поляризацию
-    response.signal_.v_ = pack.parameters_[1]; // <- начальная засветка детектора, принимающего вертикальную поляризацию
-    response.errorCode_ = pack.status_;
+    response.signal_ = standOptions.startLightNoises_; // <- начальная засветка
+    response.errorCode_ = 0;
     return response;
 }
 
 api::AngleResponse Conserial::SetPlateAngle(adc_t plateNumber, angle_t angle)
 {
+    logOut(__FUNCTION__);
+    logOut("Параметры: " + to_string(angle));
     api::AngleResponse response; // Структура для формирования ответа
     api::WAnglesResponse tempResponse;
     WAngles<angle_t> angles;
@@ -600,6 +680,7 @@ api::AngleResponse Conserial::SetPlateAngle(adc_t plateNumber, angle_t angle)
 
 api::AdcResponse Conserial::GetMaxLaserPower()
 {
+    logOut(__FUNCTION__);
     api::AdcResponse response; // Структура для формирования ответа
 
     // Заполняем поля для ответа
@@ -610,6 +691,8 @@ api::AdcResponse Conserial::GetMaxLaserPower()
 
 api::WAnglesResponse Conserial::GetStartPlatesAngles()
 {
+
+    logOut(__FUNCTION__ );
     api::WAnglesResponse response; // Структура для формирования ответа
 
     // Записываем полученное в структуру
@@ -621,6 +704,7 @@ api::WAnglesResponse Conserial::GetStartPlatesAngles()
 
 api::SLevelsResponse Conserial::GetMaxSignalLevels()
 {
+    logOut(__FUNCTION__);
     api::SLevelsResponse response; // Структура для формирования ответа
 
     response.signal_ = standOptions.maxSignalLevels_;
@@ -630,6 +714,7 @@ api::SLevelsResponse Conserial::GetMaxSignalLevels()
 
 api::AdcResponse Conserial::CreateConfigSecret(string passwd){
 
+    logOut(__FUNCTION__);
     api::AdcResponse response;
 
     if(standOptions.premissions!=1){
@@ -651,8 +736,9 @@ api::AdcResponse Conserial::CreateConfigSecret(string passwd){
         str_length = size(passwd);
     }
 
+
     UartResponse pack;
-    pack = Twiting(dict_.find("CreateConfigSecret")->second, (uint8_t *)&passwd, str_length);
+    pack = Twiting(dict_.find("CreateConfigSecret")->second, &(uint8_t &) passwd[0], str_length);
 
     response.adcResponse_ = pack.parameters_[0];
     response.errorCode_ = pack.status_;
@@ -664,6 +750,7 @@ api::AdcResponse Conserial::CreateConfigSecret(string passwd){
 
 api::AdcResponse Conserial::OpenConfigMode(string passwd){
 
+    logOut(__FUNCTION__);
     api::AdcResponse response;
 
     int str_length = size(passwd);
@@ -677,9 +764,8 @@ api::AdcResponse Conserial::OpenConfigMode(string passwd){
         str_length = size(passwd);
     }
 
-
     UartResponse pack;
-    pack = Twiting(dict_.find("OpenConfigMode")->second, (uint8_t *)&passwd, str_length);
+    pack = Twiting(dict_.find("OpenConfigMode")->second, &(uint8_t &) passwd[0], str_length);
 
     response.adcResponse_ = pack.parameters_[0];
     response.errorCode_ = pack.status_;
@@ -691,107 +777,132 @@ api::AdcResponse Conserial::OpenConfigMode(string passwd){
 
 uint16_t Conserial::CloseConfigMode()
 {
+    logOut(__FUNCTION__);
     standOptions.premissions  = 0;
     return 1;
 }
 
 uint16_t Conserial::GetCurrentMode()
 {
+    logOut(__FUNCTION__);
     return standOptions.premissions;
 }
 
 uint16_t Conserial::GetMaxPayloadSize()
 {
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetMaxPayloadSize")->second, 0);
+    logOut(__FUNCTION__);
+    int N = 0;
+    uint8_t *bytes = {new uint8_t[N]};
+    ParamToBytes(bytes, N);
+    UartResponse pack = Twiting(dict_.find("GetMaxPayloadSize")->second, bytes, N);
+
     standOptions.maxPayloadSize = pack.parameters_[0];
     return standOptions.maxPayloadSize;
 }
 
-hwe::versionProtocolResponse Conserial::GetProtocolVersion (){
-    hwe::versionProtocolResponse response;
-    UartResponse pack;
-    pack = Twiting(dict_.find("GetProtocolVersion")->second, 0);
+hwe::Conserial::versionProtocolResponse Conserial::GetProtocolVersion (){
+    logOut(__FUNCTION__);
+    hwe::Conserial::versionProtocolResponse response;
+    switch (version_protocol) {
+    case VersionProtocol::protocol_1_5:{
+        response = {1,5,0};
+        break;
+    }
+    case VersionProtocol::protocol_1_2:{
+        response = {1,2,0};
+        break;
+    }
+    case VersionProtocol::protocol_1_0:{
+        response = {1,0,0};
 
-    response.version_ = pack.parameters_[0];
-    response.subversion_ = pack.parameters_[1];
-    response.errorCode_ = pack.status_;
-
-    versionProtocol  = {response.version_,response.subversion_};
+        break;
+    }
+    default:
+        break;
+    }
 
     return response;
 }
 
-hwe::versionFirmwareResponse Conserial::GetCurrentFirmwareVersion(){
-    hwe::versionFirmwareResponse response;
+hwe::Conserial::versionFirmwareResponse Conserial::GetCurrentFirmwareVersion(){
+    logOut(__FUNCTION__);
+    hwe::Conserial::versionFirmwareResponse response;
     UartResponse pack;
-    pack = Twiting(dict_.find("GetCurrentFirmwareVersion")->second, 0);
-
-    response.major_ = pack.parameters_[0];
-    response.minor_ = pack.parameters_[1];
-    response.micro_ = pack.parameters_[2];
-    response.errorCode_ = pack.status_;
-
-    versionFirmware  = {response.major_,response.minor_,response.micro_};
+    switch (version_protocol) {
+    case VersionProtocol::protocol_1_5:{
+        int N = 0;
+        uint8_t *bytes = {new uint8_t[N]};
+        ParamToBytes(bytes, N);
+        UartResponse pack = Twiting(dict_.find("GetCurrentFirmwareVersion")->second, bytes, N);
+        response.major_ = pack.parameters_[0];
+        response.minor_ = pack.parameters_[1];
+        response.micro_ = pack.parameters_[2];
+        response.errorCode_ = pack.status_;
+        versionFirmware  = {response.major_,response.minor_,response.micro_};
+        response = {versionFirmware.major,versionFirmware.minor,versionFirmware.micro};
+        break;
+    }
+    default:
+        if(version_protocol == VersionProtocol::protocol_1_0){
+            response = {1,0,0};
+        }
+        break;
+    }
     return response;
 };
 
-Conserial::UartResponse Conserial::Twiting (char commandName, int N, ... ){
-    UartResponse pack;
-    // Проверка соединения
-    if (!StandIsConected())
-    {
-        pack.status_= 17;
-
-    }else {
-
-        va_list temp_params;
-        va_start(temp_params,N);
-        uint16_t * params =new uint16_t [N];
-
-        for (int i = 0; i < N; i++){
-            params[i]= va_arg(temp_params, unsigned int);
-        }
-        va_end(temp_params);
-        uint8_t * temp_= new uint8_t [2*N];
-
-        int j = 0 ;
-        for (int i = 0; i <= 2 * N; i= i+2){
-            temp_[i] = params[j]>>8;
-            temp_[i+1] = params[j];
-            j++;
-        };
+void Conserial::FirmwareUpdate (string path){
+    logOut(__FUNCTION__);
+    string command ="avrdude -v -p atmega328p -c arduino -P " + com_.GetPort() +" -b 115200 -D -U flash:w:\"" + path + "\":i";
+    const char * mainCommand= command.c_str();
+    if(system(mainCommand)){
+        FindProtocolVersion();
+    };
+    logOut("\n");
+}
 
 
-        int count = 0;
-        while (count < 3) {
-            //Посылаем запрос МК
-            SendUart(commandName, temp_, 2*N );
+void Conserial::FindProtocolVersion(){
+    logOut("\t  **** START " + (string) __FUNCTION__+ " ****");
+    int notFound = 1;
 
-            //Чтение ответа
-            pack = ParsePackege(standOptions.timeoutTime_);
-            if (pack.status_==1){
+    while(notFound !=0 && !(version_protocol == VersionProtocol::unknown)){
+        notFound = GetLaserState().errorCode_;
+        if(notFound !=0){
+            switch (version_protocol) {
+            case VersionProtocol::protocol_1_5:
+                version_protocol = VersionProtocol::protocol_1_2;
+                break;
+            case VersionProtocol::protocol_1_2:
+                version_protocol = VersionProtocol::protocol_1_0;
+                break;
+            default:
+                version_protocol = VersionProtocol::unknown;
                 break;
             }
-            ++count;
         }
-        delete [] params;
     }
-
-    pack.status_= CheckStatus(pack.status_);
-    return pack;
+    switch (version_protocol) {
+    case VersionProtocol::protocol_1_5:
+        logOut("Version: 1.5");
+        break;
+    case VersionProtocol::protocol_1_2:
+        logOut("Version: 1.2");
+        break;
+    case VersionProtocol::protocol_1_0:
+        logOut("Version: 1.0");
+        break;
+    default:
+        logOut("Version: unknown");
+        break;
+    }
+    logOut("\t **** END " + (string)__FUNCTION__ + " **** \n");
 }
 
-void Conserial::FirmwareUpdate (string path){
-    string command ="avrdude -v -patmega328p -c arduino -P /dev/ttyStandQKD" + com_.GetPort() +" -b 115200 -D -U flash:w:\"" + path + "\":i";
-    const char * mainCommand= command.c_str();
-    system(mainCommand);
-}
-
+//          ****** ТРАНСПРОТ ******
 Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, uint16_t length){
 
     UartResponse pack;
-
     // Проверка соединения
     if (!StandIsConected())
     {
@@ -799,20 +910,11 @@ Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, u
     }else {
 
         int count = 0;
-        while (count < 3) {
+        while (count < 3 && pack.status_ != 1) {
             //Посылаем запрос МК
-            SendUart(commandName, bytes, length);
+            SendPacket(commandName, bytes, length);
 
-            //Чтение ответа
-            if (versionProtocol.version == 1 && versionProtocol.subversion == 2){
-                pack =  ParsePackege(standOptions.timeoutTime_);
-            }else if(versionProtocol.version == 1 && versionProtocol.subversion == 0){
-                pack =  ParsePackege_1_0(standOptions.timeoutTime_);
-            }
-
-            if (pack.status_==1){
-                break;
-            }
+            pack = ParsePacket();
             ++count;
         }
     }
@@ -821,355 +923,304 @@ Conserial::UartResponse Conserial::Twiting (char commandName, uint8_t * bytes, u
     return pack;
 }
 
-uint16_t Conserial:: SendUart (char commandName, uint8_t * bytes, uint16_t N){
+void Conserial::ParamToBytes(uint8_t * bytes,  int &quantityP, ...){
+    va_list temp_params;
+    va_start(temp_params,quantityP);
+    uint16_t * params =new uint16_t [quantityP];
 
-    uint8_t start1 = 255;
-    uint8_t start2 = 254;
-    uint16_t end = 65535;
-    uint8_t payload [2] = {uint8_t((N+2)>>8), uint8_t(N+2)};
-    uint8_t solt = 0;
+    for (int i = 0; i < quantityP; i++){
+        params[i]= va_arg(temp_params, unsigned int);
+    }
+    va_end(temp_params);
+
+    int j = 0 ;
+    quantityP *=  2;
+    for (int i = 0; i < quantityP; i= i+2){
+        bytes[i] = (params[j]>>8);
+        bytes[i+1] = params[j];
+        j++;
+    };
+
+    delete [] params;
+};
+
+uint16_t Conserial:: SendPacket (char commandName, uint8_t * bytes, uint16_t N){
+
+    //const int maxBytesWithoutParam = 9; // st0 + st1 + pld0 + pld1 + cN + solt + crc + end0 + end1
     uint8_t crc = 0;
 
-    uint8_t temp_[256] = {uint8_t(commandName)};
-    if (versionProtocol.version == 1 &&versionProtocol.subversion == 5){
-        temp_[0] = payload[0];
-        temp_[1] = payload[1];
+    uint8_t temp_[128] = {uint8_t(commandName)};
+    uint8_t packingMessage [64] {};
+    int n = 0;
+    /*Packing pack*/
+    switch (version_protocol) {
+    case VersionProtocol::protocol_1_5:{
+        temp_[0] = uint8_t((N+2)>>8);
+        temp_[1] = uint8_t(N+2);
         temp_[2] = commandName;
         for (int i = 3; i <=  N+2; i++){
             temp_[i] = bytes[i-3];
         };
         crc = Crc8((uint8_t *) &temp_, N+4);//bytes +pld0+pld1+ cN +solt
-    }else{
+
+        packingMessage[0] = 0xFF; //st0
+        packingMessage[1] = 0xFE; //st1
+        n = 2;
+        int j = 0;
+        while (n < N+5) {
+            packingMessage[n] = temp_[j];
+            n++; j++;
+        }
+        packingMessage[n++] = 0x00; //solt
+        packingMessage[n++] = crc; //crc
+        packingMessage[n++] = 0xFF; //end1
+        packingMessage[n++] = 0xFF; //end2
+
+        break;
+    }
+    case VersionProtocol::protocol_1_2:{
         for (int i = 1; i <=  N; i++){
             temp_[i] = bytes[i-1];
         };
         crc = Crc8((uint8_t *) &temp_, N+2);//bytes + cN +solt
+
+        packingMessage[0] = 0xFF; //st0
+        packingMessage[1] = 0xFE; //st1
+        n = 2;
+        int j = 0;
+        while (n < N+3) {
+            packingMessage[n] = temp_[j];
+            n++; j++;
+        }
+        packingMessage[n++] = 0x00; //solt
+        packingMessage[n++] = crc; //crc
+        packingMessage[n++] = 0xFF; //end1
+        packingMessage[n++] = 0xFF; //end2
+        break;
+    }
+    case VersionProtocol::protocol_1_0:{
+        for (int i = 1; i <=  N; i++){
+            temp_[i] = bytes[i-1];
+        };
+        crc = Crc8((uint8_t *) &temp_, N+2);//bytes + cN +solt
+
+        packingMessage[0] = 0xFF; //st0
+        packingMessage[1] = 0xFE; //st1
+        n = 2;
+        packingMessage[n++] = 0x00; //solt (status)
+        packingMessage[n++] = uint8_t(commandName); //name
+        packingMessage[n++] = crc; //crc
+
+
+        int j = 0;
+        while (/*n <= N+4*/j < N) {
+            packingMessage[n++] = temp_[1+j];
+            j++;
+        }
+
+        packingMessage[n++] = 0xFF; //end1
+        packingMessage[n++] = 0xFF; //end2
+
+        break;
+    }
+    default:
+        break;
     }
 
-
-    com_.Write(start1);
-    com_.Write(start2);
     logOut("Sending message" + currentDateTime());
-    logOut("send byte:" + to_string(start1));
-    logOut("send byte:" + to_string(start2));
-    if (versionProtocol.version == 1 && (versionProtocol.subversion == 2 || versionProtocol.subversion == 5)){
-        if (versionProtocol.subversion == 5){
-            com_.Write(payload [0]);
-            com_.Write(payload [1]);  // Payload_size
-            logOut("send byte:" + to_string(payload [0]));
-            logOut("send byte:" + to_string(payload [1]));
-            for (int s=2 ; s <= N+2; s++){
-                com_.Write(temp_[s]);
-                logOut("send byte:" + to_string(temp_[s]));
-            }
-        }else{
-            for (int s=0 ; s <= N; s++){
-                logOut("send byte:" + to_string(temp_[s]));
-            }
-        }
-
-        com_.Write(solt);
-        com_.Write(crc);
-        logOut("send byte:" + to_string(solt));
-        logOut("send byte:" + to_string(crc));
-    }else if(versionProtocol.version == 1 && versionProtocol.subversion == 0){
-        com_.Write(solt);
-        com_.Write((uint16_t )commandName);
-        com_.Write(crc);
-        logOut("send byte:" + to_string(solt));
-        logOut("send byte:" + to_string((uint16_t )commandName));
-        logOut("send byte:" + to_string(crc));
-        for (int s=1 ; s <= N; s++){
-            com_.Write(temp_[s]);
-            logOut("send byte:" + to_string(temp_[s]));
-        }
+    for (int i = 0 ; i < n ; i++){
+        com_.Write(packingMessage[i]);
+        logOut("send byte:" + to_string(packingMessage[i]));
     }
-    com_.Write(end);
-    logOut("send end:" + to_string(end));
+    //delete [] packingMessage;
     return 1;
 };
 
-Conserial::UartResponse Conserial::ParsePackege(unsigned int timeout){
-    bool startPackFlag_=false;
-    bool successReceipt_=false;
-    bool flag_ = 0;
-    bool a = 0;
-    array <uint16_t, 201>  params  = {0};
-    Conserial::UartResponse pack_;
-    uint8_t currentByte_=0;
-    timeout = timeout * 1000;
+int Conserial::ReadPacket(uint8_t *readBytes, int N ){
 
-    if (!com_.IsOpened())
-    {
-        return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
-    }
-    clock_t end_time = clock() + timeout * (CLOCKS_PER_SEC/1000) ;
-    logOut("Read_com started to find packet at " + currentDateTime());
-    while (clock()<end_time) {
-        while (startPackFlag_ != true && clock()<end_time) {
-            currentByte_ = com_.ReadChar(a);
-            if(a){
-                logOut("read byte:" + to_string((int)currentByte_));
-                if (currentByte_ == 255){
-                    flag_ = 1;
-                }
-                else{
-                    if (flag_ == 1){
-                        if (currentByte_ != 254)
-                        {
-                            flag_ = 0;
-                        }
-                        else{
-                            startPackFlag_ = true;
-                            break;
-                        }
-                    }
-                    else {
-                        flag_ = 0;
-                    }
-                }
-            }
-            if (startPackFlag_){
-                logOut("Started read packet (marker successfull)");
-            }
-        }
+    bool success = 0, end_read = 0, start_read = 0;
+    int readed  = 0;
+    clock_t end_time = clock() + standOptions.timeoutTime_* 1000 * (CLOCKS_PER_SEC/1000) ;
+    uint8_t byte = 0;
+    uint16_t temp_2b = 0;
 
-        if (startPackFlag_ == true){
-            int count = 9;
-            if (versionProtocol.version == 1 && versionProtocol.subversion == 5){
-                count = 11;
-            }
-            int paramCnt = 1;
-            unsigned short p=0;
-            uint8_t tempPld = 0;
-            while (p != 65535 && clock()<end_time) {
-                currentByte_ = com_.ReadChar(a);
-                if(a){
-                    logOut("read byte:" + to_string((int)currentByte_));
-                    if(count >9){
-                        tempPld = tempPld + currentByte_;
-                        if (count == 11){
-                            tempPld = tempPld << 8;
-                        }else{
-                            pack_.payload = currentByte_;
-                        }
-                    }
-                    else if (count>8){
-                        pack_.nameCommand_ = currentByte_;
-                    }
-                    else if (count>7){
-                        pack_.status_= currentByte_;
-                        if(pack_.status_!=1){
-                            return {0,0,pack_.status_,{0,0,0,0,0,0,0,0,0,0}};
-                        }
-                    }
-                    else{
-                        p = p + currentByte_;
-                        if (count>6){
-                            p = p<<8;
-                        }
-                        else{
-                            paramCnt++;
-                            if (paramCnt > (int)params.size()+1){
-                                return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
-                            }
-                            if (p==65535){
-                                successReceipt_= true;
-                                break;}
-                            else{
-                                params[0] = paramCnt-1;
-                                params[paramCnt-1]= p;
-                                p=0;
-                                count=8;
-                            }
-                        }
-                    }
-                    count--;
+    switch (version_protocol) {
+    case VersionProtocol::unknown:
+        break;
+    default:
+        logOut("Read_com started to find packet at " + currentDateTime());
+        while (clock()< end_time && !end_read){
+            byte = com_.ReadChar(success);
+            if (success){
+                logOut("read byte:" + to_string(byte));
+                if (start_read){ // Reading all bytes from package with end bytes;
+                    readBytes[readed++] = byte;
+                }
+                temp_2b = (temp_2b << 8) | (uint16_t) byte;
+                if (temp_2b == 0xFFFE && !start_read){ // Starting read
+                    logOut("Started read packet (marker successfull)");
+                    start_read = true;
+                }else if (start_read && temp_2b == 0xFFFF){ // Ending read
+                    logOut("Ended read packet (marker successfull)");
+                    end_read = 1;
+                }
+                if (clock()>end_time){ //timeouted
+                    logOut("Read timeouted at " + currentDateTime());
+                    end_read = 1;
+                    readed = 0;
+                }
+                if (readed > N){ // much date
+                    logOut("Was read much date");
+                    end_read = 1;
+                    readed = 0;
                 }
             }
         }
-        else{
-            logOut("Read_com packet search failed");
-            return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
-        }
-        if( successReceipt_ == true){
-            break;
-        }
-        if (clock()>=end_time){
-            std::string stream("Started at ");
-            logOut("Read_com timeouted at" + currentDateTime());
-        }
-    }
-    // Формирование массива для подсчета CRC
-    int crc = 65535;
-    uint8_t temp_[256] = { pack_.nameCommand_,pack_.status_};
-    if (versionProtocol.version == 1 && versionProtocol.subversion == 5){
-        temp_[0] = uint8_t(pack_.payload>>8);
-        temp_[1] = uint8_t(pack_.payload);
-        temp_[2] = pack_.nameCommand_;
-        temp_[3] = pack_.status_;
-
-        int j = 1;
-        for (int i = 4; i <= pack_.payload+2; i= i+2){
-            temp_[i] = params[j]>>8;
-            temp_[i+1] = params[j];
-            j++;
-        };
-
-        crc = Crc8((uint8_t*)&temp_, pack_.payload+3);
-
-    }else{
-        int j = 1;
-        for (int i = 2; i <= 2*params[0]; i= i+2){
-            temp_[i] = params[j]>>8;
-            temp_[i+1] = params[j];
-            j++;
-        };
-
-        crc = Crc8((uint8_t*)&temp_, 2*(uint8_t)params[0]+2);
+        break;
     }
 
-    //Подсчет CRC
-    if(crc!=0){
-        cout<< "WrongCheckSum"<<"\t" << crc <<endl;
-        logOut("WrongCheckSum \t" + to_string((int)crc));
-        logOutUart(pack_);
-        return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
-    }
-
-
-    //Формирование параметров
-    for(int i=0; i<(int)params.size()-1; i++){
-        if(i+1 != params[0])
-            pack_.parameters_[i] = params[i+1];
-        else {
-            pack_.crc_ = params[i+1];
-            break;
-        }
-    }
-    logOut("Read_com final packet");
-    logOutUart(pack_);
-    return pack_ ;
+    return readed;
 }
 
-Conserial::UartResponse Conserial::ParsePackege_1_0(unsigned int timeout){
-    bool startPackFlag_=false;
-    bool successReceipt_=false;
-    bool flag_ = 0;
-    bool success = 0;
-    array <uint16_t, 201>  params  = {0};
-    Conserial::UartResponse pack_= {0,0,0,{0}};
-    uint8_t currentByte_=0;
-    timeout = timeout * 1000;
-
-    logOut("Read_com started with timeout = " + std::to_string(timeout) + " s from port " + com_.GetPort());
+Conserial::UartResponse Conserial::ParsePacket(){
+    Conserial::UartResponse pack_;
     if (!com_.IsOpened())
     {
         return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
     }
+    uint8_t buffer[200]{}; // Array readed
 
-    logOut("Read_com started to find packet at" + currentDateTime());
-    clock_t end_time = clock() + timeout * (CLOCKS_PER_SEC/1000) ;
-    while (clock()<end_time) {
-        while (startPackFlag_ != true && clock()<end_time) {
-            currentByte_ = com_.ReadChar(success);
-            logOut("read byte:" + to_string((int)currentByte_));
-            if(success){
-                if (currentByte_ == 0xFF){
-                    flag_ = 1;
-                }
-                else{
-                    if (flag_ == 1){
-                        if (currentByte_ != 0xFE)
-                        {
-                            flag_ = 0;
-                        }
-                        else{
-                            startPackFlag_ = true;
-                            break;
-                        }
-                    }
-                    else {
-                        flag_ = 0;
-                    }
-                }
-            }
-        }
+    int readedBytes = ReadPacket(buffer, 200) ; // Reading
+    buffer[--readedBytes] = 0; //Clean first end byte
+    buffer[--readedBytes] = 0; //Clean second end byte
 
-        if (startPackFlag_ == true){
-            int count = 10;
-            int paramCnt =1;
-            unsigned short p=0;
-            while (p != 65535 && clock()<end_time) {
-                currentByte_ = com_.ReadChar(success);
-                if(success){
-                    if (count>9){
-                        pack_.status_=currentByte_;
-                    }
-                    else if (count>8){
-                        pack_.nameCommand_=currentByte_;
-                    }
-                    else if (count>7){
-                        pack_.crc_=currentByte_;
-                    }
-                    else{
-                        p = p + currentByte_;
-                        if (count>6){ p = p<<8; }
-                        else{
-                            paramCnt++;
-                            if (paramCnt> (int)params.size()+1){
-                                return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
-                            }
-                            if (p==65535){
-                                successReceipt_= true;
-                                break;}
-                            else{
-                                params[0] = paramCnt-1;
-                                params[paramCnt-1]= p;
-                                p=0;
-                                count=8;
-                            }
-                        }
-                    }
-                    count--;
-                }
+    /*Parsing*/
+
+    uint8_t crc = 255;
+    if ( readedBytes > 0){ //Success read
+        switch (version_protocol) {
+        case VersionProtocol::protocol_1_5:{
+            pack_.payload = (uint16_t) buffer[0] << 8 | (uint16_t) buffer[1];
+            pack_.nameCommand_ = buffer[2];
+            pack_.status_ = buffer[3];
+            pack_.crc_ = buffer[readedBytes-1];
+
+            int j = 4;
+            for (int i = 0; i < 10 && j < readedBytes - 2 ; ++i) {
+                pack_.parameters_[i]=(uint16_t) buffer[j] << 8 | (uint16_t) buffer[j+1];
+                j+=2;
             }
-        }
-        else{
-            logOut("Read_com packet search failed");
-            return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
-        }
-        if( successReceipt_ == true){
+
+            crc = Crc8(buffer, readedBytes);
+            if(crc!=0){
+                logOut("WrongCheckSum \t" + to_string(crc));
+                logOutUart(pack_);
+                pack_.status_ = 3;
+            }
             break;
         }
-        if (clock()>=end_time){
-            std::string stream("Started at ");
-            logOut("Read_com timeouted at" + currentDateTime());
+        case VersionProtocol::protocol_1_2:{
+            pack_.nameCommand_ = buffer[0];
+            pack_.status_ = buffer[1];
+            pack_.crc_ = buffer[readedBytes-1];
+
+            int j = 2;
+            for (int i = 0; i < 10 && readedBytes - j > 1 && readedBytes - j < readedBytes - 2; ++i) {
+                pack_.parameters_[i]=(uint16_t) buffer[j] << 8 | (uint16_t) buffer[j+1];
+                j+=2;
+            }
+
+            crc = Crc8(buffer, readedBytes);
+            if(crc!=0){
+                logOut("WrongCheckSum \t" + to_string(crc));
+                logOutUart(pack_);
+                pack_.status_ = 3;
+            }
+            break;
+        }
+        case VersionProtocol::protocol_1_0:{
+            pack_.status_ = buffer[0];
+            pack_.nameCommand_ = buffer[1];
+            pack_.crc_ = buffer[2];
+            int j = 3;
+            for (int i = 0; i < 10 && readedBytes - j > 1; ++i) {
+                pack_.parameters_[i]=(uint16_t) buffer[j] << 8 | (uint16_t) buffer[j+1];
+                j += 2;
+            }
+
+            uint16_t temp = pack_.nameCommand_ + pack_.parameters_[0] + pack_.parameters_[1]
+                            + pack_.parameters_[2] + pack_.parameters_[3] + pack_.parameters_[4]
+                            + pack_.parameters_[5] + pack_.parameters_[6] + pack_.parameters_[7]
+                            + pack_.parameters_[8]+ pack_.parameters_[9];
+
+            crc = Crc8((uint8_t *)&temp, sizeof(temp));
+
+            if(!(crc == pack_.crc_)){
+                logOut("WrongCheckSum \t" + to_string(crc));
+                logOutUart(pack_);
+                pack_.status_ = 3;
+            }
+            break;
+        }
+        default:
+            break;
+        }
+
+    }else{ //Not read or not fully read
+        logOut("Read packet broken");
+        pack_.status_ = 3;
+    }
+
+    logOut("Coverted  final packet");
+    logOutUart(pack_);
+
+    return pack_;
+}
+
+bool Conserial::StandIsConected (){
+    if(!com_.IsOpened())
+    {
+        com_.Close();
+        com_.Open();
+        if(!com_.IsOpened())
+            return 0;
+        else{
+            FindProtocolVersion();
+        }
+    }
+    return 1;
+};
+
+uint8_t Conserial::CheckStatus(uint8_t status){
+    uint8_t errorCode = status;
+
+    if (status == 1){
+        errorCode = 0;
+    }else
+    {
+        if ( !(status ^ 2) ){
+            logOut("Количество принятых параметров превышает допустимый предел");}
+        if ( !(status ^ 4) ){
+            logOut("Необнаружена метка конца пакета");}
+        if ( !(status ^ 16) ){
+            logOut("Несоответствие CRC");}
+        if ( !(status ^ 32) ){
+            logOut("Не удалось выполнить команду");}
+        if ( !(status ^ 64) ){
+            logOut("Аппаратная платформа в аварийном состоянии");}
+
+        if ( !(status ^ 17)){
+            errorCode = 1;
+            logOut("Проблема с подключением");
+        }
+        if ( !(status ^ 18)){
+            errorCode = 2;
+            logOut("Переданы неверные параметры на вход библиотечной функции ");
         }
     }
 
-    //Формирование параметров
-    for(int i=0; i<params[0]; i++){
-        pack_.parameters_[i] = params[i+1];
-    }
-    uint16_t temp = pack_.nameCommand_ + pack_.parameters_[0] + pack_.parameters_[1]
-                    + pack_.parameters_[2] + pack_.parameters_[3] + pack_.parameters_[4]
-                    + pack_.parameters_[5] + pack_.parameters_[6] + pack_.parameters_[7]
-                    + pack_.parameters_[8]+ pack_.parameters_[9];
-    uint8_t crc = Crc8((uint8_t*)&temp, sizeof(temp));
-
-
-    //Подсчет CRC
-
-    if(!(crc == pack_.crc_)){
-        cout<< "WrongCheckSum"<<"\t" << (int)crc << (int) pack_.crc_<<endl;
-        logOut("WrongCheckSum \t" + to_string((int)crc));
-        logOutUart(pack_);
-        return {0,0,3,{0,0,0,0,0,0,0,0,0,0}};
-    }
-    logOut("Read_com final packet");
-    logOutUart(pack_);
-    return pack_ ;
+    logOut("-> Код ошибки: " + to_string(errorCode));
+    return errorCode;
 }
 
 // Функция подсчёта контрольной суммы
@@ -1182,6 +1233,7 @@ uint8_t Conserial::Crc8(uint8_t *pcBlock, uint8_t len)
     return crc;
 }
 
+//          ****** Step to Angle  & Angle to Step ******
 uint16_t Conserial::CalcStep(angle_t angle, angle_t rotateStep){
     if (angle < 0){
         angle = angle + 360;
@@ -1213,60 +1265,7 @@ WAngles<angle_t> Conserial::CalcAngles(WAngles<adc_t> steps)
     return angles;
 }
 
-bool Conserial::StandIsConected (){
-    if(!com_.IsOpened())
-    {
-        com_.Open();
-        if(!com_.IsOpened())
-            return 0;
-    }
-    return 1;
-};
-
-uint8_t Conserial::CheckStatus(uint8_t status){
-    uint8_t errorCode = 3;
-
-    if (status == 1){
-        errorCode = 0;
-    }else
-    {
-        if ( (status ^ 2) == 0 ){
-            cout<<"Количество принятых параметров превышает допустимый предел"<<endl;
-            errorCode = 3;
-        }
-
-        if ( (status ^ 4) == 0 ){
-            cout<<"Необнаружена метка конца пакета"<<endl;
-            errorCode = 3;
-        }
-
-        if ( (status ^ 16) == 0 ){
-            cout<<"Несоответствие CRC"<<endl;
-            errorCode = 3;
-        }
-
-        if ( (status ^ 17) == 0 ){
-            errorCode = 1; //Проблема с подключением
-        }
-
-        if ( (status ^ 18) == 0 ){
-            errorCode = 2; //Переданы неверные параметры на вход библиотечной функции
-        }
-        if ( (status ^ 32) == 0 ){
-            cout<<"Не удалось выполнить команду"<<endl;
-            errorCode = 3;
-        }
-
-        if ( (status ^ 64) == 0 ){
-            cout<<"Аппаратная платформа в аварийном состоянии"<<endl;
-            errorCode = 3;
-        }
-    }
-
-    return errorCode;
-}
-
-
+//          ****** ЖУРНАЛИРОВАНИЕ ******
 void Conserial::logOut(std::string str)
 {
 #ifndef NO_SERIAL_LOG
@@ -1284,8 +1283,6 @@ const std::string Conserial::currentDateTime() {
     struct tm  tstruct;
     char       buf[80];
     tstruct = *localtime(&now);
-    // Visit http://en.cppreference.com/w/cpp/chrono/c/strftime
-    // for more information about date/time format
     strftime(buf, sizeof(buf), "%Y-%m-%d.%X", &tstruct);
 
     return buf;
