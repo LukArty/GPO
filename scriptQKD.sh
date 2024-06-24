@@ -29,47 +29,29 @@ sed -i "s@ENV{PRODUCT}==\"1a86\/7523\/\*\", *ENV{BRLTTY_BRAILLE_DRIVER}=\"bm\", 
 fi
 
 #Добавление ссылки на порт подключения стенда
-if [ -f $fileRedirect ] && ! grep -qF "$LinkString" $fileRedirect
-then
-	echo $LinkString >> $fileRedirect
- 	echo $LinkString2 >> $fileRedirect 
-else 
-	touch $fileRedirect 
-	echo $LinkString >> $fileRedirect
- 	echo $LinkString2 >> $fileRedirect
-fi
-
-#Запуск Программного обеспечения
-IFS=$'\n'
-exsist=$(ls -1A | grep -iEc ".*QKD.*") 
-folder=( $(ls -1A | grep -iE ".*QKD.*") )
-files=( $(ls -1A | grep -iE ".*QKD.*" | grep -E  "") )
-
-if [ "$exsist" -lt 1 ]; #Файлы не найден
+if [ -f $fileRedirect ] 
 then 
-	echo "QKD файлов нет в данном каталоге"
-elif [ "$exsist" -gt 1 ]; #Если найдено больше 1 файла
-then
-	while true; 
-	do 
-		echo "Выберите файл для открытия:"
-		ls "${files[@]}" | grep -nE  "" #Вывод пронумерованных файлов 
-		
-		read -p "Введите номер файла >" number
-		
-		if [ "$number" == "q" ] 
-		then
-			break;
-		elif [ "$number" -gt 0 ] && [ "$number" -le "$exsist" ] ; 
-		then
- 			$(./${files[$number-1]})
- 			break;
- 		else 
- 			echo -e "\n!!!>> Введен некорректный номер файла, попробуйте ещё раз. <<!!!\n"
- 			continue;
- 		fi
- 	done
-else #Найден один файл
-	$(./${files[0]})
+touch $fileRedirect 
 fi
+
+if ! grep -qF "$LinkString" $fileRedirect 
+then
+	echo $LinkString >> $fileRedirect
+fi
+
+if ! grep -qF "$LinkString2" $fileRedirect
+then
+ 	echo $LinkString2 >> $fileRedirect 
+fi
+
+#Перезагрузка
+while true; do
+	echo "Для корректной работы стенда, необходимо произвести перезагрузку компьютера."
+read -p "	
+Хотите перезагрузить? [Y/N]: " answer 
+	if ( echo "$answer" | grep -q '^[YyДд]\{1\}$\|^[YyДд][EeАа][Ss]' ) then reboot;
+	elif (echo "$answer" | grep -q '^[NnНн]\{1\}$\|^[NnНн][OoЕе][Тт]' ) then exit;
+	else echo "Дайте ответ Y или N" 
+	fi
+done
 
